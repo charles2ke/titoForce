@@ -131,7 +131,7 @@ take precedence. [`.env.example`](.env.example) documents every server option. T
 | `TITO_DATABASE_URL`                       | `data/titoforce.db` in the repository root                 | `sqlite:/path/to/file.db` or `postgres://user:pass@host:5432/db`                       |
 | `TITO_SEED_DEMO`                          | `true` unless `NODE_ENV=production`                        | Load the demo company on first start                                                   |
 | `TITO_ADMIN_EMAIL`, `TITO_ADMIN_PASSWORD` | `admin@titoforce.example`, `titoforce` (demo) or generated | First administrator, created on first start only. A generated password is printed once |
-| `TITO_TRUST_PROXY`                        | `false`                                                    | Set to `true` behind a reverse proxy, so rate limits see real client IPs               |
+| `TITO_TRUST_PROXY`                        | `false`                                                    | Set to `true` only when direct server access is blocked and trusted proxies overwrite client-supplied forwarding headers |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL`       | none, `https://api.openai.com/v1`                          | OpenAI or any OpenAI-compatible endpoint                                               |
 | `ANTHROPIC_API_KEY`                       | none                                                       | Anthropic                                                                              |
 | `TITO_AI_PROVIDER`, `TITO_AI_MODEL`       | auto-detected, see [AI providers](#ai-providers)           | Choose `openai`, `anthropic` or `offline`, and the model                               |
@@ -219,8 +219,8 @@ npm run e2e         # builds the web app, then runs Playwright against a fresh d
   - Password changes: 10 failures per user in 15 minutes.
   - Agent chat: 30 messages per user per minute.
   - Public web forms: 10 submissions per client IP per form per minute.
-- **Behind a reverse proxy**, set `TITO_TRUST_PROXY=true` so rate limits see real client IPs. Leave it off when
-  clients connect directly, because they could then fake their IP address.
+- **Behind a reverse proxy**, set `TITO_TRUST_PROXY=true` only when direct server access is blocked and trusted
+  proxies overwrite client-supplied forwarding headers; otherwise clients could fake their IP address.
 - **Public web forms** accept submissions without signing in. Only active forms accept them, and a submission can only
   fill in the fields its form lists.
 - **Webhook actions can call any HTTP(S) URL**, including internal addresses. Only give the _Manage automations_
