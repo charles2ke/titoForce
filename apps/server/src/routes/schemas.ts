@@ -1,0 +1,209 @@
+import { FIELD_TYPES, FILTER_OPERATORS, PALETTE } from '@titoforce/shared';
+import { z } from 'zod';
+
+// Request-shape validation. Services perform the semantic validation (known fields, permissions, …).
+
+const id = z.string().min(1).max(64);
+const apiName = z.string().min(1).max(64);
+const shortText = z.string().max(255);
+
+export const filterRule = z.object({ field: apiName, op: z.enum(FILTER_OPERATORS), value: z.unknown().optional() });
+export const filterGroup = z.object({ match: z.enum(['all', 'any']), rules: z.array(filterRule).max(50) });
+export const sortSpec = z.object({ field: apiName, dir: z.enum(['asc', 'desc']) });
+
+export const recordQuery = z.object({
+  filters: filterGroup.nullish(),
+  andFilters: z.array(filterGroup.nullable()).max(5).optional(),
+  viewId: id.nullish(),
+  sort: sortSpec.nullish(),
+  page: z.number().int().min(1).max(1_000_000).optional(),
+  pageSize: z.number().int().min(1).max(500).optional(),
+  q: z.string().max(200).optional(),
+});
+
+export const recordWrite = z.object({
+  fields: z.record(z.string(), z.unknown()),
+  allowDuplicates: z.boolean().optional(),
+});
+
+export const login = z.object({ email: z.string().min(1).max(254), password: z.string().min(1).max(200), issueToken: z.boolean().optional() });
+export const changePassword = z.object({ current: z.string().min(1).max(200), next: z.string().min(8).max(200) });
+
+export const listView = z.object({
+  object: apiName,
+  name: z.string().min(1).max(80),
+  shared: z.boolean().default(false),
+  filters: filterGroup.nullable().default(null),
+  sort: sortSpec.nullable().default(null),
+  columns: z.array(apiName).max(30).nullable().default(null),
+  viewType: z.enum(['table', 'kanban', 'calendar', 'timeline']).default('table'),
+  groupBy: apiName.nullish(),
+});
+
+const navItem = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('object'), object: apiName, label: shortText.optional(), view: z.enum(['table', 'kanban', 'calendar', 'timeline']).optional() }),
+  z.object({ type: z.literal('page'), page: z.enum(['home', 'forecast', 'org-chart', 'reports']), label: shortText, icon: z.string().max(40) }),
+]);
+export const app = z.object({
+  id: z.string().regex(/^[a-z][a-z0-9_-]{0,39}$/).optional(),
+  name: z.string().min(1).max(60),
+  description: z.string().max(500).default(''),
+  icon: z.string().max(40).default('layout-grid'),
+  color: z.enum(PALETTE).default('indigo'),
+  nav: z.array(navItem).max(30),
+  dashboardId: id.nullable().default(null),
+  sortOrder: z.number().int().min(0).max(1000).default(100),
+});
+
+export const createUser = z.object({
+  email: z.string().min(3).max(254),
+  name: z.string().min(1).max(120),
+  title: z.string().max(120).nullish(),
+  roleId: apiName,
+  password: z.string().min(8).max(200),
+});
+export const updateUser = z.object({
+  name: z.string().min(1).max(120).optional(),
+  title: z.string().max(120).nullish(),
+  roleId: apiName.optional(),
+  active: z.boolean().optional(),
+  password: z.string().min(8).max(200).optional(),
+});
+
+const access = z.enum(['all', 'own', 'none']);
+export const role = z.object({
+  name: z.string().min(1).max(80),
+  description: z.string().max(500).default(''),
+  permissions: z.object({
+    setup: z.boolean(),
+    viewSensitive: z.boolean(),
+    manageAutomations: z.boolean(),
+    manageAgents: z.boolean(),
+    objects: z.record(z.string(), z.object({ read: access, create: z.boolean(), edit: access, delete: access })),
+  }),
+});
+
+export const createObject = z.object({
+  label: z.string().min(1).max(60),
+  pluralLabel: z.string().max(60).optional(),
+  apiName: apiName.optional(),
+  description: z.string().max(500).optional(),
+  icon: z.string().max(40).optional(),
+  color: z.enum(PALETTE).optional(),
+});
+export const updateObject = z.object({
+  label: z.string().min(1).max(60).optional(),
+  pluralLabel: z.string().min(1).max(60).optional(),
+  description: z.string().max(500).optional(),
+  icon: z.string().max(40).optional(),
+  color: z.enum(PALETTE).optional(),
+  nameField: apiName.optional(),
+  nameTemplate: z.string().max(200).nullish(),
+  statusField: apiName.nullish(),
+  dateField: apiName.nullish(),
+  timeline: z.object({ start: apiName, end: apiName }).nullish(),
+  highlightFields: z.array(apiName).max(8).optional(),
+  listFields: z.array(apiName).max(15).optional(),
+  duplicateFields: z.array(apiName).max(5).optional(),
+  validationRules: z
+    .array(z.object({ name: z.string().min(1).max(80), condition: z.string().min(1).max(2000), message: z.string().min(1).max(255), active: z.boolean().optional() }))
+    .max(30)
+    .optional(),
+});
+
+const option = z.object({ value: z.string().min(1).max(100), color: z.enum(PALETTE).optional() });
+const fieldBase = {
+  label: z.string().min(1).max(80),
+  required: z.boolean().optional(),
+  options: z.array(option).max(200).optional(),
+  referenceTo: apiName.nullish(),
+  cascadeDelete: z.boolean().optional(),
+  formula: z.string().max(4000).optional(),
+  formulaType: z.enum(['number', 'currency', 'percent', 'text', 'date', 'checkbox']).optional(),
+  rollup: z
+    .object({
+      childObject: apiName,
+      relationshipField: apiName,
+      fn: z.enum(['count', 'sum', 'min', 'max', 'avg']),
+      field: apiName.optional(),
+      filter: filterGroup.nullish(),
+    })
+    .optional(),
+  defaultValue: z.unknown().optional(),
+  helpText: z.string().max(500).optional(),
+  sensitive: z.boolean().optional(),
+  precision: z.number().int().min(0).max(8).optional(),
+  section: z.string().max(60).optional(),
+};
+export const createField = z.object({ ...fieldBase, apiName: apiName.optional(), type: z.enum(FIELD_TYPES) });
+export const updateField = z.object(fieldBase).partial();
+
+const action = z.looseObject({ type: z.enum(['update_record', 'update_related', 'create_record', 'notify', 'run_agent', 'webhook', 'submit_approval']) });
+export const automation = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().max(1000).default(''),
+  object: apiName,
+  trigger: z.object({ type: z.enum(['created', 'updated', 'saved', 'deleted']), watchFields: z.array(apiName).max(20).optional() }),
+  conditions: filterGroup.nullable().default(null),
+  actions: z.array(action).min(1).max(20),
+  active: z.boolean().default(true),
+});
+
+export const approvalProcess = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().max(1000).default(''),
+  object: apiName,
+  entryConditions: filterGroup.nullable().default(null),
+  approver: z.discriminatedUnion('type', [
+    z.object({ type: z.literal('user'), userId: id }),
+    z.object({ type: z.literal('field'), path: z.string().min(1).max(200), fallbackUserId: id.optional() }),
+  ]),
+  onSubmit: z.array(action).max(20).default([]),
+  onApprove: z.array(action).max(20).default([]),
+  onReject: z.array(action).max(20).default([]),
+  active: z.boolean().default(true),
+});
+
+export const submitApproval = z.object({ recordId: id, processId: id.optional(), comment: z.string().max(2000).optional() });
+export const decision = z.object({ comment: z.string().max(2000).optional() });
+
+export const agent = z.object({
+  name: z.string().min(1).max(80),
+  description: z.string().max(1000).default(''),
+  instructions: z.string().max(8000).default(''),
+  tools: z.array(z.string().max(60)).min(1).max(50),
+  autonomy: z.enum(['read_only', 'approval_required', 'autonomous']),
+  icon: z.string().max(40).default('bot'),
+  color: z.enum(PALETTE).default('indigo'),
+  active: z.boolean().default(true),
+});
+
+export const chat = z.object({ message: z.string().min(1).max(4000), conversationId: id.nullish(), recordId: id.nullish() });
+
+const reportSpec = {
+  object: apiName,
+  filters: filterGroup.nullable().default(null),
+  groupBy: z.object({ field: apiName, interval: z.enum(['day', 'month', 'quarter', 'year']).optional() }).nullable().default(null),
+  metric: z.object({ fn: z.enum(['count', 'sum', 'avg', 'min', 'max']), field: apiName.optional() }),
+  sort: z.enum(['natural', 'label', 'value_desc', 'value_asc']).default('natural'),
+  limit: z.number().int().min(1).max(100).nullable().default(null),
+};
+export const reportPreview = z.object(reportSpec);
+export const report = z.object({
+  ...reportSpec,
+  name: z.string().min(1).max(120),
+  description: z.string().max(1000).default(''),
+  chart: z.enum(['bar', 'column', 'line', 'pie', 'donut', 'kpi', 'table', 'funnel']),
+  app: z.string().max(40).nullable().default(null),
+});
+
+export const dashboard = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().max(1000).default(''),
+  app: z.string().max(40).nullable().default(null),
+  widgets: z.array(z.object({ reportId: id, title: z.string().max(120).optional(), size: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional() })).max(24),
+});
+
+export const convertLead = z.object({ createOpportunity: z.boolean().optional(), opportunityName: z.string().max(255).optional(), accountId: id.optional() });
+export const importCsv = z.object({ csv: z.string().min(1).max(5_000_000) });
+export const markRead = z.object({ ids: z.array(id).max(500).optional() });
