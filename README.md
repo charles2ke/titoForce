@@ -36,7 +36,7 @@ project (v0.1), not a drop-in replacement for any of them. See [What is not ther
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Sales (CRM)              | Accounts, contacts, leads with lead scoring and **lead conversion**, opportunities with stages and forecast categories, products, quotes and quote lines, **sales forecast** (by month or owner) |
 | Service                  | Cases with priority and SLA fields, knowledge base                                                                                                                               |
-| Marketing                | Campaigns, **public web forms** that create leads (web-to-lead)                                                                                                                  |
+| Marketing                | Campaigns, **public web forms** that create leads or cases (web-to-lead, web-to-case)                                                                                            |
 | Work (monday.com-style)  | Projects and work items on boards, calendars and timelines                                                                                                                       |
 | People (Workday-style)   | Departments, employees, **org chart**, time off requests with manager approval, performance reviews, job requisitions and candidates                                             |
 
@@ -50,7 +50,7 @@ project (v0.1), not a drop-in replacement for any of them. See [What is not ther
 - **Approval processes**:
   - Entry criteria.
   - Approver chosen as a fixed user or from a field, for example the employee's manager.
-  - Actions on approve and reject.
+  - Actions on submit, approve and reject.
   - An approvals inbox, plus approve, reject and recall from the record page.
 
 ### Analytics
@@ -62,12 +62,16 @@ project (v0.1), not a drop-in replacement for any of them. See [What is not ther
 ### AI agents
 
 - **Six built-in agents**:
-  - Copilot.
+  - titoForce Copilot: a general assistant for every app.
   - Lead Qualifier: runs automatically on new leads.
   - Service Triage: runs automatically on new cases.
   - Deal Coach.
   - HR Assistant.
   - Project Manager.
+- **Ask AI** in the header opens an assistant panel on any page. Choose an active agent and chat with it.
+  - On a record page, _Ask AI_ and _Summarize with AI_ give the agent the record as context.
+  - The panel docks beside the page on screens at least 1280px wide, and overlays it on narrower screens.
+  - The **Agents** page keeps your past conversations with each agent.
 - **You can build your own agent** in Setup: write its instructions, pick from 17 tools, and set its autonomy.
   - Tools let an agent search, query, aggregate, read the timeline, search knowledge, score leads, create and update
     records, log activities, convert leads, submit approvals and notify people.
@@ -79,11 +83,12 @@ project (v0.1), not a drop-in replacement for any of them. See [What is not ther
   - In chat, an agent acts with the permissions of the user it is helping.
   - When an automation runs an agent, it acts as the dedicated "titoForce AI" user and its role.
   - Every run records its steps and tool calls, and every change appears on the record timeline.
-- **Providers**: any OpenAI-compatible API (OpenAI, Azure OpenAI, Ollama, vLLM and others) or Anthropic.
-  - Without an API key, agents use a built-in offline rules engine. It handles common requests such as "show open
-    deals over 50k closing this quarter", "total pipeline by stage", "summarize Acme Corporation", "qualify all new
-    leads" and "log a call with Acme about renewal". It is useful for demos and tests, but it is not a language
-    model.
+- **Providers**: any OpenAI-compatible API (OpenAI, Azure OpenAI, Ollama, vLLM and others) or Anthropic. See
+  [AI providers](#ai-providers) for setup.
+  - Until a provider is configured, agents use a built-in offline rules engine. It handles common requests such as
+    "show open deals over 50k closing this quarter", "total pipeline by stage", "summarize Acme Corporation",
+    "qualify all new leads" and "log a call with Acme about renewal". It is useful for demos and tests, but it is not
+    a language model.
 
 ## Quick start
 
@@ -105,48 +110,74 @@ is `titoforce`.
 | `admin@titoforce.example`    | Administrator    | Setup: objects, fields, roles, apps, automations, agents          |
 | `maria@titoforce.example`    | Sales manager    | Pipeline, forecast, approvals for quote discounts                 |
 | `james@titoforce.example`    | Sales rep        | Own-record security, deal coaching                                |
+| `priya@titoforce.example`    | Sales rep        | A second rep's pipeline, a pending quote discount request         |
 | `sofia@titoforce.example`    | Support agent    | Cases, knowledge, service triage                                  |
 | `liam@titoforce.example`     | Marketing        | Campaigns and web forms                                           |
 | `hannah@titoforce.example`   | HR manager       | Employees, org chart, time off and requisition approvals          |
 | `noah@titoforce.example`     | Employee         | Self-service time off, HR assistant                               |
 
-For development, `npm run dev` starts the API with auto-restart and the Vite dev server on http://localhost:5173.
-Run `npm run db:reset` to delete the local database and start over.
+For development, `npm run dev` starts the API with auto-restart and the Vite dev server on http://localhost:5173,
+which forwards `/api` requests to the API on `TITO_PORT`. Set `TITO_WEB_PORT` to run Vite on another port. Run
+`npm run db:reset` to delete the local database and start over.
 
 ## Configuration
 
-Settings are environment variables, or a `.env` file in the repository root. [`.env.example`](.env.example)
-documents every option. The most important ones:
+Settings are environment variables, or a `.env` file in the repository root. Variables already set in the environment
+take precedence. [`.env.example`](.env.example) documents every server option. The most important ones:
 
-| Variable                                                      | Default                         | Purpose                                                                       |
-| ------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------- |
-| `TITO_PORT`, `TITO_HOST`                                      | `3000`, `127.0.0.1`             | Where the server listens (use `0.0.0.0` in containers)                        |
-| `TITO_DATABASE_URL`                                           | `sqlite:./data/titoforce.db`    | SQLite file or `postgres://user:pass@host:5432/db`                            |
-| `TITO_SEED_DEMO`                                              | `true` unless `NODE_ENV=production` | Load the demo company on first start                                     |
-| `TITO_ADMIN_EMAIL`, `TITO_ADMIN_PASSWORD`                     | demo admin, or a generated password | First administrator (a generated password is printed once)                |
-| `OPENAI_API_KEY`, `OPENAI_BASE_URL`                           | none                            | OpenAI or any OpenAI-compatible endpoint                                      |
-| `ANTHROPIC_API_KEY`                                           | none                            | Anthropic                                                                     |
-| `TITO_AI_PROVIDER`, `TITO_AI_MODEL`                           | auto-detected                   | Force `openai`, `anthropic` or `offline`, and choose the model               |
+| Variable                                  | Default                                                    | Purpose                                                                                |
+| ----------------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `TITO_PORT`, `TITO_HOST`                  | `3000`, `127.0.0.1`                                        | Where the server listens (use `0.0.0.0` in containers)                                 |
+| `TITO_DATABASE_URL`                       | `data/titoforce.db` in the repository root                 | `sqlite:/path/to/file.db` or `postgres://user:pass@host:5432/db`                       |
+| `TITO_SEED_DEMO`                          | `true` unless `NODE_ENV=production`                        | Load the demo company on first start                                                   |
+| `TITO_ADMIN_EMAIL`, `TITO_ADMIN_PASSWORD` | `admin@titoforce.example`, `titoforce` (demo) or generated | First administrator, created on first start only. A generated password is printed once |
+| `TITO_TRUST_PROXY`                        | `false`                                                    | Set to `true` only when direct server access is blocked and trusted proxies overwrite client-supplied forwarding headers |
+| `OPENAI_API_KEY`, `OPENAI_BASE_URL`       | none, `https://api.openai.com/v1`                          | OpenAI or any OpenAI-compatible endpoint                                               |
+| `ANTHROPIC_API_KEY`                       | none                                                       | Anthropic                                                                              |
+| `TITO_AI_PROVIDER`, `TITO_AI_MODEL`       | auto-detected, see [AI providers](#ai-providers)           | Choose `openai`, `anthropic` or `offline`, and the model                               |
+
+To store the SQLite database elsewhere, use an absolute path. Relative paths resolve from the server's working
+directory, which is `apps/server` under the npm scripts.
+
+### AI providers
+
+Setting `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` switches agents from the offline engine to that provider. If both are
+set, OpenAI is used unless `TITO_AI_PROVIDER=anthropic`. `TITO_AI_PROVIDER=offline` keeps agents offline even when a
+key is set. Agents rely on tool calling, so choose a model that supports it.
+
+- **OpenAI**: set `OPENAI_API_KEY`. The model defaults to `gpt-4.1-mini`.
+- **Anthropic**: set `ANTHROPIC_API_KEY`. The model defaults to `claude-sonnet-4-5`.
+- **Other OpenAI-compatible APIs**, such as vLLM or Azure OpenAI's v1 API
+  (`https://<resource>.openai.azure.com/openai/v1`): also set `OPENAI_BASE_URL` and `TITO_AI_MODEL` (on Azure, the
+  deployment name). Requests go to `{OPENAI_BASE_URL}/chat/completions`, with the key sent as a bearer token.
+- **Local servers without a key**, such as Ollama: set `TITO_AI_PROVIDER=openai`,
+  `OPENAI_BASE_URL=http://localhost:11434/v1` and a `TITO_AI_MODEL` the server provides. Without
+  `TITO_AI_PROVIDER`, agents stay offline.
 
 ### PostgreSQL
 
 SQLite (built into Node.js) is the default. For PostgreSQL, set `TITO_DATABASE_URL=postgres://…`. The schema is
-created on first start, and the same migrations run on both databases.
+created on first start, and the same migrations run on both databases. On PostgreSQL, `npm run db:reset` drops every
+titoForce table, so it only runs when confirmed: `npm run db:reset -- --yes`.
 
 ## Architecture
 
 ```
 apps/
   server/   Fastify API (Node.js, native TypeScript)
+    src/db/          SQLite and PostgreSQL adapters, schema and versioned migrations
+    src/routes/      HTTP API routes
     src/platform/    metadata, records, query builder, users and roles, list views, CSV import, notifications
     src/automation/  automation engine, actions, approval processes
     src/analytics/   reports, dashboards
     src/ai/          agent runtime, tools, providers (OpenAI-compatible, Anthropic), offline rules engine
     src/modules/     lead conversion, forecast, org chart, web forms
     src/seed/        standard objects, roles, apps, agents and the demo company
+    src/cli/         database reset (`npm run db:reset`)
   web/      React 19, Vite, Tailwind CSS 4, TanStack Query, Recharts
 packages/
   shared/   types and pure logic shared by server and web (formulas, filters, validation)
+scripts/    development runner (`npm run dev`)
 e2e/        Playwright end-to-end tests
 ```
 
@@ -181,8 +212,17 @@ npm run e2e         # builds the web app, then runs Playwright against a fresh d
 
 - **Disable demo data in production.** Demo users share a well-known password. The demo company is only loaded
   automatically when `NODE_ENV` is not `production`; set `TITO_SEED_DEMO=false` for any real deployment.
-- **Sessions** use HttpOnly, SameSite=Lax cookies, which are Secure in production. API clients can request a bearer
-  token. Failed sign-ins and password changes are rate limited.
+- **Sessions** last 7 days and use HttpOnly, SameSite=Lax cookies, which are Secure in production. API clients can
+  sign in with `"issueToken": true` and send the returned token as `Authorization: Bearer <token>`.
+- **Rate limits** are kept in memory by each server process:
+  - Sign-in: 10 failures per account and 50 per client IP in 15 minutes.
+  - Password changes: 10 failures per user in 15 minutes.
+  - Agent chat: 30 messages per user per minute.
+  - Public web forms: 10 submissions per client IP per form per minute.
+- **Behind a reverse proxy**, set `TITO_TRUST_PROXY=true` only when direct server access is blocked and trusted
+  proxies overwrite client-supplied forwarding headers; otherwise clients could fake their IP address.
+- **Public web forms** accept submissions without signing in. Only active forms accept them, and a submission can only
+  fill in the fields its form lists.
 - **Webhook actions can call any HTTP(S) URL**, including internal addresses. Only give the _Manage automations_
   permission to people you trust.
 - **When an LLM provider is configured**, prompts that include CRM data are sent to that provider. Use the offline
