@@ -4,8 +4,10 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
+import { loadDotEnv } from '../apps/server/src/config.ts';
 
 const root = resolve(import.meta.dirname, '..');
+loadDotEnv();
 
 const tasks = [
   {

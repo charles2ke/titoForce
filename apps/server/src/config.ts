@@ -61,7 +61,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     seedDemo: env.TITO_SEED_DEMO ? env.TITO_SEED_DEMO !== 'false' : env.NODE_ENV !== 'production',
     adminEmail: env.TITO_ADMIN_EMAIL ?? null,
     adminPassword: env.TITO_ADMIN_PASSWORD ?? null,
-    webDist: env.TITO_WEB_DIST ?? resolve(import.meta.dirname, '../../web/dist'),
+    webDist: resolve(import.meta.dirname, '../../..', env.TITO_WEB_DIST ?? 'apps/web/dist'),
     secureCookies: env.NODE_ENV === 'production' && env.TITO_INSECURE_COOKIES !== 'true',
     trustProxy: env.TITO_TRUST_PROXY === 'true',
     logLevel: env.TITO_LOG_LEVEL ?? 'info',

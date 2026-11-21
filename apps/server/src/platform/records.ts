@@ -715,11 +715,37 @@ export class RecordService {
   }
 
   async update(principal: Principal, object: string, id: string, input: RecordData, opts: WriteOptions = {}): Promise<CrmRecord> {
+    return this.updateWithRetry(principal, object, id, input, opts);
+  }
+
+  /** Increment from the latest persisted form, retaining normal silent-update history and validation. */
+  async incrementFormSubmissions(principal: Principal, id: string): Promise<CrmRecord> {
+    return this.updateWithRetry(principal, 'web_form', id, {}, { silent: true }, true);
+  }
+
+  private async updateWithRetry(
+    principal: Principal, object: string, id: string, input: RecordData, opts: WriteOptions, incrementSubmissions = false,
+  ): Promise<CrmRecord> {
+    for (;;) {
+      const result = await this.updateAttempt(principal, object, id, input, opts, incrementSubmissions);
+      if (result) return result;
+    }
+  }
+
+  private async updateAttempt(
+    principal: Principal, object: string, id: string, input: RecordData, opts: WriteOptions, incrementSubmissions: boolean,
+  ): Promise<CrmRecord | undefined> {
     const def = this.metadata.require(object);
-    const current = await this.getRaw(id);
+    // Form edits and counter increments must both compare their complete snapshot:
+    // otherwise a stale full-record write could undo either kind of update.
+    const snapshot = object === 'web_form'
+      ? await this.db.get<RecordRow>(`SELECT ${COLUMNS} FROM records WHERE id = ?`, [id])
+      : undefined;
+    const current = object === 'web_form' ? (snapshot ? rowToRecord(snapshot) : undefined) : await this.getRaw(id);
     if (!current || current.object !== object || !canRead(principal, object, current.ownerId)) throw notFound(`${def.label} not found`);
     assertCanEdit(principal, object, current.ownerId);
-    const { values, ownerId } = this.coerceInput(principal, def, input);
+    const effectiveInput = incrementSubmissions ? { ...input, submissions: Number(current.fields.submissions ?? 0) + 1 } : input;
+    const { values, ownerId } = this.coerceInput(principal, def, effectiveInput);
     for (const [k, v] of Object.entries(values)) {
       const f = def.fields.find((x) => x.apiName === k)!;
       if (f.required && isBlank(v)) throw badRequest(`${f.label} is required`, { field: k });
@@ -756,8 +782,11 @@ export class RecordService {
       }
     }
 
-    await this.db.transaction(async (tx) => {
-      await tx.run('UPDATE records SET name = ?, owner_id = ?, data = ?, search_text = ?, updated_at = ?, updated_by = ? WHERE id = ?', [
+    const written = await this.db.transaction(async (tx) => {
+      const comparison = snapshot
+        ? ` AND object_api_name = ? AND name = ? AND owner_id ${tx.dialect === 'sqlite' ? 'IS' : 'IS NOT DISTINCT FROM'} ? AND data = ? AND updated_at = ? AND updated_by ${tx.dialect === 'sqlite' ? 'IS' : 'IS NOT DISTINCT FROM'} ?`
+        : '';
+      const result = await tx.run(`UPDATE records SET name = ?, owner_id = ?, data = ?, search_text = ?, updated_at = ?, updated_by = ? WHERE id = ?${comparison}`, [
         name,
         newOwner,
         JSON.stringify(fields),
@@ -765,11 +794,18 @@ export class RecordService {
         now,
         principal.userId,
         id,
+        ...(snapshot ? [snapshot.object_api_name, snapshot.name, snapshot.owner_id, typeof snapshot.data === 'string' ? snapshot.data : JSON.stringify(snapshot.data), snapshot.updated_at, snapshot.updated_by] : []),
       ]);
+      if (!result.changes) return false;
       if (history.length) await this.writeHistory(tx, record, 'updated', history, principal);
       await this.refreshRollups(tx, object, [current.fields, fields]);
+      return true;
     });
 
+    if (!written) {
+      if (snapshot) return undefined;
+      throw notFound(`${def.label} not found`);
+    }
     if (!opts.silent) await this.events.emit({ type: 'updated', object, record, previous: current, changed: [...changed], principal });
     return this.redact(principal, (await this.getRaw(id)) ?? record);
   }

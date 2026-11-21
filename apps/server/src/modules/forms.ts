@@ -75,7 +75,7 @@ export class FormsService {
     if (form.ownerId) values.owner_id = form.ownerId;
     const actor: Principal = { ...systemPrincipal(`Web form: ${form.name}`, 'public'), depth: 0 };
     await this.records.create(actor, target, values, { allowDuplicates: true });
-    await this.records.update(systemPrincipal(), 'web_form', form.id, { submissions: Number(form.fields.submissions ?? 0) + 1 }, { silent: true });
+    await this.records.incrementFormSubmissions(systemPrincipal(), form.id);
     return { message: thanks };
   }
 }

@@ -49,7 +49,7 @@ export default function Forecast() {
   const { def } = useObjectDef('opportunity');
   const q = useQuery({
     queryKey: ['forecast', groupBy, months],
-    queryFn: () => api.get<{ rows: ForecastRow[]; totals: ForecastRow }>(`/api/forecast?groupBy=${groupBy}&months=${months}`),
+    queryFn: () => api.get<{ rows: ForecastRow[]; totals: ForecastRow; truncated: boolean; matchingCount: number }>(`/api/forecast?groupBy=${groupBy}&months=${months}`),
   });
   const set = (patch: Record<string, string>) => {
     const next = new URLSearchParams(params);
@@ -108,6 +108,11 @@ export default function Forecast() {
         <ErrorBanner error={q.error} />
       ) : t ? (
         <>
+          {q.data?.truncated && (
+            <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Partial forecast: showing {t.count.toLocaleString()} of {q.data.matchingCount.toLocaleString()} matching opportunities. All figures below exclude the remaining opportunities.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3 @xl:grid-cols-3 @5xl:grid-cols-5">
             <Kpi label="Closed won" value={money(t.closedWon)} icon={Trophy} tone="bg-emerald-100 text-emerald-700" />
             <Kpi label="Commit" value={money(t.commit)} hint="Open, likely to close" icon={Target} tone="bg-indigo-100 text-indigo-700" />

@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router';
 import { api } from '../../api.ts';
 import { hex } from '../../lib/colors.ts';
-import { formatDate, parseDate, todayIso, toDateInput } from '../../lib/format.ts';
+import { fieldDef, formatDate, parseDate, todayIso, toDateInput, valueOf } from '../../lib/format.ts';
 import { Button, EmptyState, ErrorBanner, IconButton, Loading } from '../ui.tsx';
 import { currentMonth, dayOf, monthStart, shiftMonth, statusColor } from './CalendarView.tsx';
 import { BOARD_LIMIT } from './KanbanView.tsx';
@@ -33,6 +33,13 @@ export function TimelineView({ def, base, month, onMonth }: { def: ObjectDef; ba
             { field: tl.end, op: 'is_empty' },
           ],
         },
+        {
+          match: 'any',
+          rules: [
+            { field: tl.end, op: 'gte', value: from },
+            { field: tl.start, op: 'gte', value: from },
+          ],
+        },
       ]
     : [];
   const query = useQuery({
@@ -44,8 +51,8 @@ export function TimelineView({ def, base, month, onMonth }: { def: ObjectDef; ba
 
   if (!tl) return <ErrorBanner className="m-4" error={new Error(`${def.label} has no start/end dates configured for timelines.`)} />;
 
-  const startLabel = def.fields.find((f) => f.apiName === tl.start)?.label ?? 'Start';
-  const endLabel = def.fields.find((f) => f.apiName === tl.end)?.label ?? 'End';
+  const startLabel = fieldDef(def, tl.start)?.label ?? 'Start';
+  const endLabel = fieldDef(def, tl.end)?.label ?? 'End';
   const months = Array.from({ length: MONTHS_SHOWN }, (_, i) => {
     const m = new Date(first.getFullYear(), first.getMonth() + i, 1);
     const days = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
@@ -56,12 +63,12 @@ export function TimelineView({ def, base, month, onMonth }: { def: ObjectDef; ba
   const pct = (n: number) => `${Math.max(0, Math.min(100, n))}%`;
 
   const bar = (r: CrmRecord) => {
-    const s = dayOf(r.fields[tl.start]);
+    const s = dayOf(valueOf(r, tl.start));
     if (!s) return null;
-    const e = dayOf(r.fields[tl.end]) ?? s;
+    const e = dayOf(valueOf(r, tl.end)) ?? s;
     const a = Math.max(0, dayIndex(s, first));
     const b = Math.min(span - 1, dayIndex(e < s ? s : e, first));
-    return { left: (a / span) * 100, width: ((b - a + 1) / span) * 100, start: s, end: dayOf(r.fields[tl.end]), clippedStart: s < from, clippedEnd: e > to };
+    return { left: (a / span) * 100, width: ((b - a + 1) / span) * 100, start: s, end: dayOf(valueOf(r, tl.end)), clippedStart: s < from, clippedEnd: e > to };
   };
 
   return (

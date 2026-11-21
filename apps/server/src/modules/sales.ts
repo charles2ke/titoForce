@@ -45,11 +45,11 @@ export class SalesService {
     this.records = records;
   }
 
-  /** Copies only the fields that exist on the target object. */
+  /** Copies target object fields and the system owner column. */
   private pick(object: string, values: RecordData): RecordData {
     const def = this.metadata.require(object);
     const out: RecordData = {};
-    for (const [k, v] of Object.entries(values)) if (v !== undefined && v !== null && v !== '' && def.fields.some((f) => f.apiName === k)) out[k] = v;
+    for (const [k, v] of Object.entries(values)) if (v !== undefined && v !== null && v !== '' && (k === 'owner_id' || def.fields.some((f) => f.apiName === k))) out[k] = v;
     return out;
   }
 
@@ -144,7 +144,7 @@ export class SalesService {
   }
 
   /** Pipeline forecast grouped by close month or owner, from the opportunities the principal can read. */
-  async forecast(principal: Principal, opts: { groupBy?: 'month' | 'owner'; months?: number } = {}): Promise<{ rows: ForecastRow[]; totals: ForecastRow }> {
+  async forecast(principal: Principal, opts: { groupBy?: 'month' | 'owner'; months?: number } = {}): Promise<{ rows: ForecastRow[]; totals: ForecastRow; truncated: boolean; matchingCount: number }> {
     const def = this.metadata.require('opportunity');
     const months = Math.min(Math.max(opts.months ?? 6, 1), 24);
     const start = new Date();
@@ -159,11 +159,13 @@ export class SalesService {
     };
     const opportunities: CrmRecord[] = [];
     let refs: RefMap = {};
+    let matchingCount = 0;
     for (let page = 1; page <= FORECAST_MAX_PAGES; page++) {
       const res = await this.records.query(principal, 'opportunity', { filters, page, pageSize: 500 });
+      matchingCount = res.total;
       opportunities.push(...res.records);
       refs = { ...refs, ...res.refs };
-      if (page * 500 >= res.total) break;
+      if (!res.records.length || page * 500 >= res.total) break;
     }
     const rows = new Map<string, ForecastRow>();
     const groupBy = opts.groupBy ?? 'month';
@@ -198,6 +200,6 @@ export class SalesService {
       }
     }
     const round = (row: ForecastRow) => ({ ...row, weighted: Math.round(row.weighted * 100) / 100 });
-    return { rows: [...rows.values()].map(round), totals: round(totals) };
+    return { rows: [...rows.values()].map(round), totals: round(totals), truncated: opportunities.length < matchingCount, matchingCount };
   }
 }

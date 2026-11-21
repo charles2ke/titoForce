@@ -25,10 +25,8 @@ export class HrService {
   async orgChart(principal: Principal): Promise<OrgNode[]> {
     this.metadata.require('employee');
     const nodes: OrgNode[] = [];
-    let refs: Record<string, { name: string }> = {};
-    for (let page = 1; page <= 10; page++) {
+    for (let page = 1; ; page++) {
       const res = await this.records.query(principal, 'employee', { page, pageSize: 500, sort: { field: 'name', dir: 'asc' } });
-      refs = { ...refs, ...res.refs };
       for (const r of res.records) {
         nodes.push({
           id: r.id,
@@ -40,13 +38,13 @@ export class HrService {
           directReports: 0,
         });
       }
-      if (page * 500 >= res.total) break;
+      if (!res.records.length || page * 500 >= res.total) break;
     }
-    const ids = new Set(nodes.map((n) => n.id));
+    const byId = new Map(nodes.map((n) => [n.id, n]));
     for (const n of nodes) {
-      if (n.managerId && !ids.has(n.managerId)) n.managerId = null;
+      if (n.managerId && !byId.has(n.managerId)) n.managerId = null;
     }
-    for (const n of nodes) if (n.managerId) nodes.find((m) => m.id === n.managerId)!.directReports++;
+    for (const n of nodes) if (n.managerId) byId.get(n.managerId)!.directReports++;
     return nodes;
   }
 }

@@ -19,7 +19,7 @@
     "test": "npm run test -w @titoforce/shared && npm run test -w @titoforce/server",
     "typecheck": "tsc --noEmit -p . && npm run typecheck --workspaces --if-present",
     "e2e": "npm run build && playwright test",
-    "db:reset": "npm run db:reset -w @titoforce/server"
+    "db:reset": "npm run db:reset -w @titoforce/server --"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",
