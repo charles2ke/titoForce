@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { SalesService } from '../src/modules/sales.ts';
 import type { Principal } from '../src/platform/principal.ts';
 import type { Services } from '../src/services.ts';
 import { AppError } from '../src/util.ts';
@@ -102,6 +103,59 @@ describe('sales', () => {
     expect(result.opportunity?.fields.account).toBe(result.account.id);
     expect((await s.records.get(maria, 'lead', lead.id)).fields).toMatchObject({ status: 'Converted', converted_account: result.account.id });
     await expect(s.sales.convertLead(maria, lead.id)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('rejects concurrent conversions across service instances without creating extra records', async () => {
+    const lead = await s.records.create(maria, 'lead', { first_name: 'Connie', last_name: 'Current', company: 'Concurrent Labs', status: 'Qualified' });
+    const otherSales = new SalesService(s.db, s.metadata, s.records);
+    let resume!: () => void;
+    let started!: () => void;
+    const paused = new Promise<void>((resolve) => (started = resolve));
+    const proceed = new Promise<void>((resolve) => (resume = resolve));
+    const create = s.records.create.bind(s.records);
+    const spy = vi.spyOn(s.records, 'create').mockImplementation(async (...args) => {
+      if (args[1] === 'account') {
+        started();
+        await proceed;
+      }
+      return create(...args);
+    });
+    const first = s.sales.convertLead(maria, lead.id);
+    try {
+      await paused;
+      try {
+        await expect(otherSales.convertLead(maria, lead.id)).rejects.toMatchObject({ status: 409 });
+      } finally {
+        resume();
+      }
+      const result = await first;
+      const filter = (field: string, value: string) => ({ match: 'all' as const, rules: [{ field, op: 'eq' as const, value }] });
+      expect((await s.records.query(maria, 'account', { filters: filter('name', 'Concurrent Labs') })).total).toBe(1);
+      expect((await s.records.query(maria, 'contact', { filters: filter('account', result.account.id) })).total).toBe(1);
+      expect((await s.records.query(maria, 'opportunity', { filters: filter('account', result.account.id) })).total).toBe(1);
+      expect((await s.records.get(maria, 'lead', lead.id)).fields).toMatchObject({
+        status: 'Converted', converted_account: result.account.id, converted_contact: result.contact.id, converted_opportunity: result.opportunity?.id,
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('releases the claim and compensates created records when conversion fails', async () => {
+    const lead = await s.records.create(maria, 'lead', { first_name: 'Retry', last_name: 'Lead', company: 'Retry Labs', status: 'Qualified' });
+    const create = s.records.create.bind(s.records);
+    const spy = vi.spyOn(s.records, 'create').mockImplementation(async (...args) => {
+      if (args[1] === 'contact') throw new Error('Contact creation failed');
+      return create(...args);
+    });
+    try {
+      await expect(s.sales.convertLead(maria, lead.id)).rejects.toThrow('Contact creation failed');
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await s.records.query(maria, 'account', { filters: { match: 'all', rules: [{ field: 'name', op: 'eq', value: 'Retry Labs' }] } })).total).toBe(0);
+    expect((await s.records.get(maria, 'lead', lead.id)).fields.status).toBe('Qualified');
+    expect((await s.sales.convertLead(maria, lead.id)).contact.name).toBe('Retry Lead');
   });
 });
 

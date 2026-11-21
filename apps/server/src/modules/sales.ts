@@ -55,11 +55,14 @@ export class SalesService {
 
   /** Converts a lead into an account, contact and (optionally) opportunity, like Salesforce lead conversion. */
   async convertLead(principal: Principal, leadId: string, opts: ConvertLeadOptions = {}): Promise<ConvertLeadResult> {
-    const lead = await this.records.get(principal, 'lead', leadId);
-    const f = lead.fields;
-    if (String(f.status ?? '').toLowerCase() === 'converted') throw conflict('This lead has already been converted');
+    await this.records.get(principal, 'lead', leadId);
+    const claim = await this.db.run('INSERT INTO lead_conversion_claims (lead_id) VALUES (?) ON CONFLICT (lead_id) DO NOTHING', [leadId]);
+    if (!claim.changes) throw conflict('This lead is already being converted');
     const created: CrmRecord[] = [];
     try {
+      const lead = await this.records.get(principal, 'lead', leadId);
+      const f = lead.fields;
+      if (String(f.status ?? '').toLowerCase() === 'converted') throw conflict('This lead has already been converted');
       let account: CrmRecord | undefined;
       let reusedAccount = false;
       if (opts.accountId) {
@@ -135,6 +138,8 @@ export class SalesService {
       // Best-effort compensation: remove records created before the failure.
       for (const rec of created.reverse()) await this.records.delete(systemPrincipal(), rec.object, rec.id).catch(() => undefined);
       throw err;
+    } finally {
+      await this.db.run('DELETE FROM lead_conversion_claims WHERE lead_id = ?', [leadId]);
     }
   }
 

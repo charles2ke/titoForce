@@ -192,6 +192,8 @@ npm run e2e         # builds the web app, then runs Playwright against a fresh d
 
 titoForce covers the core of each product area but none of these products in full. Notable gaps:
 
+- **Lead conversion recovery**: if the server stops during conversion, its database claim remains. Before deleting the
+  corresponding row from `lead_conversion_claims`, check the lead and any partially created records.
 - **Integrations**: email sending and inbox sync, calendar sync, telephony, file attachments.
 - **Sales and finance**: multi-currency, territories, CPQ pricing rules, invoicing.
 - **Marketing**: email marketing campaigns and journeys.

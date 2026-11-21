@@ -8,6 +8,7 @@ export const TABLES = [
   'objects',
   'fields',
   'records',
+  'lead_conversion_claims',
   'record_history',
   'list_views',
   'apps',
@@ -238,6 +239,14 @@ const MIGRATIONS: { version: number; statements: (jsonType: string) => string[] 
       `CREATE TABLE settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
+      )`,
+    ],
+  },
+  {
+    version: 2,
+    statements: () => [
+      `CREATE TABLE lead_conversion_claims (
+        lead_id TEXT PRIMARY KEY REFERENCES records(id) ON DELETE CASCADE
       )`,
     ],
   },
