@@ -37,6 +37,8 @@ export default defineConfig({
     url: `http://127.0.0.1:${port}/api/health`,
     env: { E2E_PORT: String(port) },
     reuseExistingServer: false,
+    // SIGTERM (instead of the default SIGKILL) lets e2e/server.ts delete its temporary database.
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 10_000 },
     timeout: 120_000,
     stdout: 'pipe',
     stderr: 'pipe',
