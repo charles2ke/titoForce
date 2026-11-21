@@ -521,7 +521,7 @@ function AiPanel({ state, onClose, onNew }: { state: PanelState; onClose: () => 
   const agent = usable.find((a) => a.id === agentId) ?? usable[0];
 
   return (
-    <aside aria-label="AI assistant" className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md animate-slide-in flex-col border-l border-slate-200 bg-white shadow-2xl lg:static lg:z-auto lg:w-[26rem] lg:max-w-none lg:shadow-none">
+    <aside aria-label="AI assistant" className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md animate-slide-in flex-col border-l border-slate-200 bg-white shadow-2xl xl:static xl:z-auto xl:w-[26rem] xl:max-w-none xl:shadow-none">
       <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2">
         <Sparkles className="size-4 text-violet-600" aria-hidden />
         <label htmlFor="ai-panel-agent" className="sr-only">
@@ -610,7 +610,8 @@ export function Shell() {
               </div>
             </div>
           )}
-          <main id="main" className="min-w-0 flex-1 overflow-y-auto">
+          {/* A size container, so pages lay out by the space they get (the docked AI panel takes 26rem) rather than by the viewport. */}
+          <main id="main" className="@container min-w-0 flex-1 overflow-y-auto">
             <Outlet />
           </main>
           {panel && <AiPanel state={panel} onClose={close} onNew={() => open({ recordId: panel.recordId, recordName: panel.recordName })} />}

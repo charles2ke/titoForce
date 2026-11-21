@@ -146,7 +146,7 @@ function ActionRow({ a }: { a: AgentAction }) {
             {open ? <ChevronDown className="size-3.5" aria-hidden /> : <ChevronRight className="size-3.5" aria-hidden />} Details
           </button>
           {open && (
-            <div className="mt-1 grid gap-2 md:grid-cols-2">
+            <div className="mt-1 grid gap-2 @2xl:grid-cols-2">
               <div>
                 <p className="text-xs font-medium text-slate-500">Arguments</p>
                 <pre className="mt-0.5 max-h-48 overflow-auto rounded-lg bg-slate-50 p-2 text-xs text-slate-700">{prettyJson(a.args)}</pre>

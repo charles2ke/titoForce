@@ -234,7 +234,7 @@ export default function Settings() {
       >
         <div className="flex flex-wrap items-start gap-5">
           <Avatar name={user.name} color={user.avatarColor} />
-          <dl className="grid min-w-0 flex-1 grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+          <dl className="grid min-w-0 flex-1 grid-cols-1 gap-x-8 gap-y-3 @xl:grid-cols-2">
             <KeyValue label="Name">{user.name}</KeyValue>
             <KeyValue label="Email">{user.email}</KeyValue>
             <KeyValue label="Title">{user.title ?? '—'}</KeyValue>
@@ -255,7 +255,7 @@ export default function Settings() {
           )}
         </p>
       </Card>
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-5 @3xl:grid-cols-2">
         <PasswordCard />
         <div className="space-y-5">
           <DefaultAppCard />

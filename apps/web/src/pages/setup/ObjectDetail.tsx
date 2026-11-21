@@ -908,7 +908,7 @@ function LayoutTab({ def }: { def: ObjectDef }) {
 
       <section className="card p-4">
         <h2 className="mb-3 text-sm font-semibold text-slate-800">Layout</h2>
-        <div className="grid gap-5 lg:grid-cols-3">
+        <div className="grid gap-5 @3xl:grid-cols-3">
           <FormField label={`Highlight fields (${highlight.length}/8)`} htmlFor={ids.highlight} help="Shown in the record page header.">
             <OrderedFieldList id={ids.highlight} options={layoutOptions} value={highlight} onChange={setHighlight} max={8} />
           </FormField>

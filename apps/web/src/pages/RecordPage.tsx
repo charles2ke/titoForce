@@ -206,8 +206,8 @@ function RecordBody({ def, record, refs }: { def: ObjectDef; record: CrmRecord; 
         </div>
       </div>
 
-      <div className="grid gap-6 p-6 xl:grid-cols-[minmax(0,1fr)_400px]">
-        <div className="min-w-0">
+      <div className="grid gap-6 p-6 @5xl:grid-cols-[minmax(0,1fr)_400px]">
+        <div className="@container min-w-0">
           <Tabs
             tabs={[
               { id: 'details', label: 'Details' },

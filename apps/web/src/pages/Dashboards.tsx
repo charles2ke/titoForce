@@ -116,7 +116,7 @@ export default function Dashboards() {
           </EmptyState>
         </div>
       ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="grid gap-4 @lg:grid-cols-2 @5xl:grid-cols-3">
           {dashboards.map((d) => {
             const appName = d.app ? (appNames.get(d.app) ?? d.app) : null;
             return (

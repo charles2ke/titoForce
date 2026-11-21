@@ -245,14 +245,14 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
       ) : null}
       <ErrorBanner error={save.error} className="mb-4" />
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div className="min-w-0 space-y-6">
+      <div className="grid items-start gap-6 @5xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div className="@container min-w-0 space-y-6">
           <Card title="Details">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField label="Name" htmlFor="report-name" required error={attempted ? nameError : null} className="sm:col-span-2">
+            <div className="grid gap-4 @md:grid-cols-2">
+              <FormField label="Name" htmlFor="report-name" required error={attempted ? nameError : null} className="@md:col-span-2">
                 <input id="report-name" className="input" value={draft.name} maxLength={120} placeholder="e.g. Open pipeline by stage" onChange={(e) => set({ name: e.target.value })} />
               </FormField>
-              <FormField label="Description" htmlFor="report-description" className="sm:col-span-2">
+              <FormField label="Description" htmlFor="report-description" className="@md:col-span-2">
                 <textarea id="report-description" className="input" rows={2} maxLength={1000} value={draft.description} onChange={(e) => set({ description: e.target.value })} />
               </FormField>
               <FormField label="Object" htmlFor="report-object" required error={objectError} help="Changing the object resets the filters, grouping and measured field.">
@@ -291,7 +291,7 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
           </Card>
 
           <Card title="Group & measure">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 @md:grid-cols-2">
               <FormField label="Group by" htmlFor="report-group" error={groupError}>
                 <select id="report-group" className="input" value={draft.groupField} onChange={(e) => changeGroup(e.target.value)}>
                   <option value="">None (single value)</option>
@@ -330,7 +330,7 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
               <FormField
                 label="Measure"
                 htmlFor="report-fn"
-                className="sm:col-start-1"
+                className="@md:col-start-1"
                 help={def && numFields.length === 0 ? `${def.label} has no numeric fields, so only record counts are available.` : undefined}
               >
                 <select id="report-fn" className="input" value={draft.fn} onChange={(e) => changeFn(e.target.value as MetricFn)}>
@@ -355,7 +355,7 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
               )}
               {grouped && (
                 <>
-                  <FormField label="Sort groups by" htmlFor="report-sort" className="sm:col-start-1">
+                  <FormField label="Sort groups by" htmlFor="report-sort" className="@md:col-start-1">
                     <select id="report-sort" className="input" value={draft.sort} onChange={(e) => set({ sort: e.target.value as Sort })}>
                       {SORTS.map((s) => (
                         <option key={s.id} value={s.id}>
@@ -411,7 +411,7 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
           </Card>
         </div>
 
-        <div className="min-w-0 xl:sticky xl:top-6">
+        <div className="min-w-0 @5xl:sticky @5xl:top-6">
           <Card title="Preview" actions={updating ? <Spinner className="size-4" /> : null}>
             {!specValid ? (
               <p className="py-12 text-center text-sm text-slate-400">{objectError ?? groupError ?? metricError}</p>

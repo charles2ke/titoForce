@@ -21,8 +21,9 @@ export function useDashboard(id: string | null | undefined) {
   });
 }
 
-// Literal class names so Tailwind generates them.
-const SPAN: Record<1 | 2 | 3, string> = { 1: 'lg:col-span-1', 2: 'lg:col-span-2', 3: 'lg:col-span-3' };
+// Literal class names so Tailwind generates them. The grid has one column when narrow, two from @lg and three from @2xl;
+// with two columns only full-width (size 3) widgets span both, which keeps the order without leaving many gaps.
+const SPAN: Record<1 | 2 | 3, string> = { 1: '', 2: '@2xl:col-span-2', 3: '@lg:col-span-2 @2xl:col-span-3' };
 
 function WidgetCard({ widget }: { widget: RenderedWidget }) {
   const { report, result } = widget;
@@ -54,7 +55,7 @@ function WidgetCard({ widget }: { widget: RenderedWidget }) {
   );
 }
 
-/** Read-only dashboard layout: one column on small screens, three on large ones (widget size = column span). */
+/** Read-only dashboard layout sized by the grid's own width, so it also fits beside the AI panel (widget size = column span). */
 export function DashboardGrid({ widgets }: { widgets: RenderedWidget[] }) {
   if (!widgets.length) {
     return (
@@ -66,10 +67,12 @@ export function DashboardGrid({ widgets }: { widgets: RenderedWidget[] }) {
     );
   }
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      {widgets.map((w, i) => (
-        <WidgetCard key={`${i}:${w.reportId}`} widget={w} />
-      ))}
+    <div className="@container">
+      <div className="grid grid-cols-1 gap-4 @lg:grid-cols-2 @2xl:grid-cols-3">
+        {widgets.map((w, i) => (
+          <WidgetCard key={`${i}:${w.reportId}`} widget={w} />
+        ))}
+      </div>
     </div>
   );
 }

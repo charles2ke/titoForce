@@ -245,7 +245,7 @@ function QuickLinks({ app }: { app: AppDef }) {
   });
   if (!items.length) return null;
   return (
-    <nav aria-label="Quick links" className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+    <nav aria-label="Quick links" className="grid grid-cols-2 gap-2 @lg:grid-cols-3 @5xl:grid-cols-6">
       {items.map(({ def, label, view }) => (
         <Link
           key={def.apiName}
@@ -294,7 +294,8 @@ export default function AppHome() {
         </Button>
       </div>
       <QuickLinks app={app} />
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      {/* Side by side only when the dashboard still gets room for three columns; otherwise "My work" goes below it. */}
+      <div className="grid gap-5 @6xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
           {app.dashboardId ? (
             <HomeDashboard dashboardId={app.dashboardId} />
@@ -309,10 +310,12 @@ export default function AppHome() {
             </Card>
           )}
         </div>
-        <aside className="space-y-5" aria-label="My work">
-          <MyTasks />
-          <MyApprovals />
-          <RecentRuns />
+        <aside className="@container min-w-0" aria-label="My work">
+          <div className="grid gap-5 @lg:grid-cols-2 @2xl:grid-cols-3">
+            <MyTasks />
+            <MyApprovals />
+            <RecentRuns />
+          </div>
         </aside>
       </div>
     </div>

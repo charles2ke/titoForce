@@ -106,7 +106,7 @@ function InlineField({ def, record, refs, field, editable, wide }: { def: Object
             setEditing(false);
           }
         }}
-        className={cx('min-w-0 rounded-lg bg-indigo-50/60 p-2 ring-1 ring-indigo-200', wide && 'sm:col-span-2')}
+        className={cx('min-w-0 rounded-lg bg-indigo-50/60 p-2 ring-1 ring-indigo-200', wide && '@lg:col-span-2')}
       >
         <label htmlFor={inputId} className="mb-1 block text-xs font-medium text-slate-600">
           {field.label}
@@ -126,7 +126,7 @@ function InlineField({ def, record, refs, field, editable, wide }: { def: Object
   }
 
   return (
-    <div className={cx('group min-w-0 border-b border-slate-100 pb-2', wide && 'sm:col-span-2')}>
+    <div className={cx('group min-w-0 border-b border-slate-100 pb-2', wide && '@lg:col-span-2')}>
       <dt className="text-xs font-medium text-slate-500" title={field.helpText}>
         {field.label}
       </dt>
@@ -212,7 +212,7 @@ export function DetailsPanel({ def, record, refs }: { def: ObjectDef; record: Cr
     <div className="space-y-4">
       {[...sections.entries()].map(([title, fields]) => (
         <Card key={title} title={title}>
-          <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+          <dl className="grid gap-x-8 gap-y-3 @lg:grid-cols-2">
             {fields.map((f) => (
               <InlineField key={f.apiName} def={def} record={record} refs={refs} field={f} editable={canEdit && isEditable(def, f)} wide={f.type === 'longtext'} />
             ))}
@@ -220,7 +220,7 @@ export function DetailsPanel({ def, record, refs }: { def: ObjectDef; record: Cr
         </Card>
       ))}
       <Card title="System Information">
-        <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+        <dl className="grid gap-x-8 gap-y-3 @lg:grid-cols-2">
           <OwnerField def={def} record={record} refs={refs} editable={canEdit} />
           <div className="min-w-0 border-b border-slate-100 pb-2">
             <dt className="text-xs font-medium text-slate-500">Record ID</dt>

@@ -84,7 +84,7 @@ function AgentPage({ agent, agents }: { agent: AgentDef; agents: AgentDef[] }) {
 
   return (
     <div className="flex h-full min-h-0">
-      <aside className="hidden w-72 shrink-0 flex-col border-r border-slate-200 bg-white md:flex" aria-label="Agents">
+      <aside className="hidden w-72 shrink-0 flex-col border-r border-slate-200 bg-white @2xl:flex" aria-label="Agents">
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <h1 className="text-sm font-semibold text-slate-900">AI agents</h1>
           {perms.canManageAgents && (
@@ -121,14 +121,14 @@ function AgentPage({ agent, agents }: { agent: AgentDef; agents: AgentDef[] }) {
             <label htmlFor="agent-switch" className="sr-only">
               Agent
             </label>
-            <select id="agent-switch" className="input h-8 w-auto py-0 font-semibold md:hidden" value={agent.id} onChange={(e) => navigate(`/agents/${e.target.value}`)}>
+            <select id="agent-switch" className="input h-8 w-auto py-0 font-semibold @2xl:hidden" value={agent.id} onChange={(e) => navigate(`/agents/${e.target.value}`)}>
               {agents.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
                 </option>
               ))}
             </select>
-            <h2 className="hidden truncate font-semibold text-slate-900 md:block">{agent.name}</h2>
+            <h2 className="hidden truncate font-semibold text-slate-900 @2xl:block">{agent.name}</h2>
             <p className="truncate text-xs text-slate-500">{agent.description}</p>
           </div>
           <span title={AUTONOMY_HELP[agent.autonomy]}>
@@ -156,7 +156,7 @@ function AgentPage({ agent, agents }: { agent: AgentDef; agents: AgentDef[] }) {
               </div>
             )}
           </Popover>
-          <div className="md:hidden">
+          <div className="@2xl:hidden">
             <Popover
               align="right"
               className="max-h-96 w-72 overflow-y-auto p-2"

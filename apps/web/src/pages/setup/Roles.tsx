@@ -41,7 +41,7 @@ function useRoles() {
 
 function LevelSelect({ value, onChange, label, inherited }: { value: AccessLevel; onChange: (v: AccessLevel) => void; label: string; inherited: boolean }) {
   return (
-    <select aria-label={label} className={cx('input h-8 py-0 text-xs', inherited && 'text-slate-400')} value={value} onChange={(e) => onChange(e.target.value as AccessLevel)}>
+    <select aria-label={label} className={cx('input h-8 min-w-20 py-0 text-xs', inherited && 'text-slate-400')} value={value} onChange={(e) => onChange(e.target.value as AccessLevel)}>
       {LEVELS.map((l) => (
         <option key={l.id} value={l.id}>
           {l.label}
@@ -378,8 +378,8 @@ export default function Roles() {
           <EmptyState icon={ShieldCheck} title="No roles yet" />
         </div>
       ) : (
-        <div className="grid items-start gap-5 lg:grid-cols-[16rem_minmax(0,1fr)]">
-          <nav aria-label="Roles" className="card overflow-hidden lg:sticky lg:top-4">
+        <div className="grid items-start gap-5 @4xl:grid-cols-[16rem_minmax(0,1fr)]">
+          <nav aria-label="Roles" className="card overflow-hidden @4xl:sticky @4xl:top-4">
             <ul className="divide-y divide-slate-100">
               {list.map((r) => {
                 const on = r.id === current.id;

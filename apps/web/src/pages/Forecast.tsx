@@ -108,7 +108,7 @@ export default function Forecast() {
         <ErrorBanner error={q.error} />
       ) : t ? (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 @xl:grid-cols-3 @5xl:grid-cols-5">
             <Kpi label="Closed won" value={money(t.closedWon)} icon={Trophy} tone="bg-emerald-100 text-emerald-700" />
             <Kpi label="Commit" value={money(t.commit)} hint="Open, likely to close" icon={Target} tone="bg-indigo-100 text-indigo-700" />
             <Kpi label="Best case" value={money(t.bestCase)} hint="Includes commit" icon={TrendingUp} tone="bg-sky-100 text-sky-700" />
@@ -124,7 +124,7 @@ export default function Forecast() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
                     <CartesianGrid vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} interval={0} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                     <YAxis tickFormatter={(v: number) => formatCompact(v, 'currency')} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} width={60} />
                     <Tooltip formatter={(v, name) => [money(Number(v)), String(name)]} contentStyle={{ borderRadius: 8, borderColor: '#e2e8f0', fontSize: 12 }} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
                     <Legend

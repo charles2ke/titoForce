@@ -17,8 +17,11 @@ export function ReportChart({ chart, result, height = 260 }: { chart: ChartType;
 
   if (chart === 'kpi') {
     return (
-      <div className="flex flex-col items-center justify-center py-6" style={{ minHeight: Math.min(height, 160) }}>
-        <div className="text-4xl font-semibold tracking-tight text-slate-900 tabular-nums">{fmt(result.total)}</div>
+      <div className="@container flex flex-col items-center justify-center py-6" style={{ minHeight: Math.min(height, 160) }}>
+        {/* Scales down with the card's width; very long values wrap instead of spilling out. */}
+        <div className="max-w-full text-center font-semibold tracking-tight [overflow-wrap:anywhere] text-slate-900 tabular-nums" style={{ fontSize: 'clamp(1.5rem, 14cqi, 2.25rem)', lineHeight: 1.15 }}>
+          {fmt(result.total)}
+        </div>
         <div className="mt-1 text-sm text-slate-500">{result.metricLabel}</div>
       </div>
     );
@@ -58,7 +61,7 @@ export function ReportChart({ chart, result, height = 260 }: { chart: ChartType;
               {r.label}
             </div>
             <div className="flex flex-1 justify-center">
-              <div className="flex h-7 items-center justify-center rounded-md text-xs font-medium text-white" style={{ width: `${Math.max((r.value / max) * 100, 8)}%`, background: colorAt(result, i) }}>
+              <div className="flex h-7 items-center justify-center rounded-md px-1.5 text-xs font-medium whitespace-nowrap text-white" style={{ width: `${Math.max((r.value / max) * 100, 8)}%`, minWidth: '3.25rem', background: colorAt(result, i) }}>
                 {compact(r.value)}
               </div>
             </div>
@@ -71,7 +74,7 @@ export function ReportChart({ chart, result, height = 260 }: { chart: ChartType;
   if (chart === 'pie' || chart === 'donut') {
     return (
       <div className="flex flex-wrap items-center gap-4">
-        <div style={{ height, width: Math.min(height, 240) }} className="shrink-0">
+        <div style={{ maxWidth: Math.min(height, 240) }} className="mx-auto aspect-square w-full min-w-0">
           <ResponsiveContainer>
             <PieChart>
               <Pie data={result.rows} dataKey="value" nameKey="label" innerRadius={chart === 'donut' ? '58%' : 0} outerRadius="92%" paddingAngle={chart === 'donut' ? 2 : 0} stroke="#fff" isAnimationActive={false}>
@@ -125,7 +128,7 @@ export function ReportChart({ chart, result, height = 260 }: { chart: ChartType;
             </>
           ) : (
             <>
-              <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} interval={0} />
+              <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} interval="preserveStartEnd" />
               <YAxis tick={AXIS} tickFormatter={compact} tickLine={false} axisLine={false} width={56} />
             </>
           )}
