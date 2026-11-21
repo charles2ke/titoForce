@@ -1,0 +1,32 @@
+{
+  "name": "titoforce",
+  "version": "0.1.0",
+  "private": true,
+  "description": "titoForce: an open-source, agentic CRM and work platform (sales, service, marketing, work management, HR).",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.ts",
+    "build": "npm run build -w @titoforce/web",
+    "start": "npm run start -w @titoforce/server",
+    "test": "npm run test -w @titoforce/shared && npm run test -w @titoforce/server",
+    "typecheck": "tsc --noEmit -p . && npm run typecheck --workspaces --if-present",
+    "e2e": "npm run build && playwright test",
+    "db:reset": "npm run db:reset -w @titoforce/server --"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}
