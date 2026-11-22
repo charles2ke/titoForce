@@ -223,8 +223,9 @@ npm run e2e         # builds the web app, then runs Playwright against a fresh d
 - **Sessions** last 7 days and use HttpOnly, SameSite=Lax cookies, which are Secure in production. API clients can
   sign in with `"issueToken": true` and send the returned token as `Authorization: Bearer <token>`.
 - **Two-factor authentication** uses time-based codes (TOTP) from an authenticator app, and 10 single-use recovery
-  codes. When a role requires it, its users set it up at their next password sign-in. Turning it on signs the user
-  out everywhere else. Administrators can reset it for a user who lost their device.
+  codes. When a role requires it, its users set it up at their next password sign-in. Turning it on, in settings or
+  while signing in, signs the user out everywhere else. Changing a password or deactivating a user ends sign-ins that
+  are still waiting for a code. Administrators can reset it for a user who lost their device.
 - **Single sign-on**:
   - **Linking accounts:** the first sign-in through a provider links to the user with the same email address,
     including administrators. Only connect identity providers you trust to verify email addresses. Set _Allowed
@@ -236,9 +237,11 @@ npm run e2e         # builds the web app, then runs Playwright against a fresh d
   - **Public address:** set `TITO_PUBLIC_URL` when titoForce runs behind a proxy, so the addresses registered with the
     identity provider match.
 - **Field permissions and sharing** apply everywhere records are read or changed: the API, search, reports, list
-  views, related lists, exports and agents. Roles with Setup access ignore field permissions. Sharing never grants
-  delete access, edit access also needs the role's own edit permission, and only the owner, or a role that can read
-  and edit all records of the object, can change a record's owner.
+  views, related lists, exports and agents. Roles with Setup access ignore field permissions. Changes to roles,
+  objects and fields are rejected when they would show a role a hidden value through a record name, a formula or a
+  roll-up (including the roll-up's filter and relationship); sensitive fields count as hidden for roles that cannot
+  view them. Sharing never grants delete access, edit access also needs the role's own edit permission, and only the
+  owner, or a role that can read and edit all records of the object, can change a record's owner.
 - **Secrets at rest:** set `TITO_SECRET_KEY` to encrypt two-factor secrets and SSO client secrets in the database.
   Without it they are stored unencrypted, and a production server logs a warning at startup.
 - **Rate limits** are kept in memory by each server process:

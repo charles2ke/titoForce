@@ -226,11 +226,11 @@ export class UserService {
       patch.active === undefined ? (user.active ? 1 : 0) : patch.active ? 1 : 0,
       id,
     ]);
-    if (patch.password !== undefined) {
-      await this.db.run('UPDATE users SET password_hash = ? WHERE id = ?', [await hashPassword(patch.password), id]);
+    if (patch.password !== undefined) await this.db.run('UPDATE users SET password_hash = ? WHERE id = ?', [await hashPassword(patch.password), id]);
+    if (patch.password !== undefined || patch.active === false) {
       await this.db.run('DELETE FROM sessions WHERE user_id = ?', [id]);
+      await this.challenges.revokeForUser(id);
     }
-    if (patch.active === false) await this.db.run('DELETE FROM sessions WHERE user_id = ?', [id]);
     return (await this.getUser(id))!;
   }
 
@@ -291,6 +291,8 @@ export class UserService {
       throw err;
     }
     if (!(await this.challenges.consume(ch.id))) throw challengeExpired();
+    // As when turning it on from settings: sessions that signed in without the new second factor end.
+    if (ch.kind === 'mfa_setup') await this.revokeOtherSessions(ch.userId);
     return { token: await this.createSession(ch.userId), recoveryCodes };
   }
 
@@ -321,13 +323,14 @@ export class UserService {
     await this.db.run('DELETE FROM sessions WHERE id = ?', [hashToken(token)]);
   }
 
-  /** Self-service password change; signs out the user's other sessions. */
+  /** Self-service password change; signs out the user's other sessions and ends sign-ins that are waiting for a second factor. */
   async changePassword(userId: string, current: string, next: string, keepToken?: string): Promise<void> {
     const row = await this.db.get<UserRow>(`${USER_SELECT} WHERE u.id = ?`, [userId]);
     if (!row || !(await verifyPassword(current, row.password_hash))) throw new AppError(400, 'invalid_password', 'Your current password is incorrect');
     if (next.length < 8) throw badRequest('Password must be at least 8 characters');
     await this.db.run('UPDATE users SET password_hash = ? WHERE id = ?', [await hashPassword(next), userId]);
     await this.revokeOtherSessions(userId, keepToken);
+    await this.challenges.revokeForUser(userId);
   }
 
   async resolveSession(token: string): Promise<(SessionInfo & { principal: Principal }) | null> {

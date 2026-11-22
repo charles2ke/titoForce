@@ -1,6 +1,6 @@
 import { createHash, generateKeyPairSync, type KeyObject, randomUUID, sign } from 'node:crypto';
 import { inflateRawSync } from 'node:zlib';
-import type { UserDTO } from '@titoforce/shared';
+import type { RoleDef, RolePermissions, UserDTO } from '@titoforce/shared';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SignedXml } from 'xml-crypto';
@@ -163,6 +163,7 @@ describe('two-factor authentication', () => {
 
   it('is set up while signing in when the role requires it, and can be reset by administrators', async () => {
     const role = (await s.users.getRole('hr_manager'))!;
+    const before = await login('hannah');
     const put = await app.inject({
       method: 'PUT',
       url: '/api/roles/hr_manager',
@@ -176,6 +177,8 @@ describe('two-factor authentication', () => {
     const done = await post('/api/auth/mfa/verify', { challenge: first.challenge, code: totp(secret, clock) });
     expect(done.statusCode).toBe(200);
     expect(done.json().recoveryCodes).toHaveLength(10);
+    // Sessions from before the second factor was set up end, as when it is turned on in settings.
+    expect((await app.inject({ url: '/api/auth/session', headers: { cookie: before } })).statusCode).toBe(401);
     const hannah = `tf_session=${cookieOf(done, 'tf_session')}`;
     expect((await app.inject({ url: '/api/auth/mfa', headers: { cookie: hannah } })).json()).toMatchObject({ enabled: true, required: true });
     tick();
@@ -190,6 +193,82 @@ describe('two-factor authentication', () => {
     expect((await app.inject({ method: 'DELETE', url: `/api/users/${hannahId}/mfa`, headers: { cookie: admin } })).statusCode).toBe(200);
     expect(await signIn('hannah@titoforce.example')).toMatchObject({ mfaSetupRequired: true });
     await s.users.upsertRole(role);
+  });
+
+  it('ends sign-ins waiting for a second factor when the password changes or the user is deactivated', async () => {
+    const noah = await demoUser(s, 'noah');
+    const session = await login('noah');
+    const role = (await s.users.getRole(noah.roleId))!;
+    const challengeFor = async (password: string) => (await post('/api/auth/login', { email: noah.email, password })).json().challenge as string;
+    const enroll = async (challenge: string) => (await post('/api/auth/mfa/enroll', { challenge })).json().error?.code;
+    const update = (payload: object) => app.inject({ method: 'PATCH', url: `/api/users/${noah.id}`, headers: { cookie: admin, ...JSON_HEADERS }, payload });
+    await s.users.upsertRole({ ...role, permissions: { ...role.permissions, requireMfa: true } });
+    try {
+      let challenge = await challengeFor(PASSWORD);
+      expect((await post('/api/auth/password', { current: PASSWORD, next: 'changed-password' }, session)).statusCode).toBe(200);
+      expect(await enroll(challenge)).toBe('challenge_expired');
+
+      challenge = await challengeFor('changed-password');
+      expect((await update({ password: PASSWORD })).statusCode).toBe(200);
+      expect(await enroll(challenge)).toBe('challenge_expired');
+
+      challenge = await challengeFor(PASSWORD);
+      expect((await update({ active: false })).statusCode).toBe(200);
+      expect((await update({ active: true })).statusCode).toBe(200);
+      expect(await enroll(challenge)).toBe('challenge_expired');
+      expect(await enroll(await challengeFor(PASSWORD))).toBeUndefined();
+    } finally {
+      await s.users.upsertRole(role);
+      await s.users.updateUser(noah.id, { password: PASSWORD, active: true });
+    }
+  });
+});
+
+describe('field permission checks', () => {
+  const asAdmin = (method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, payload?: object) =>
+    app.inject({ method, url, headers: { cookie: admin, ...(payload ? JSON_HEADERS : {}) }, payload });
+  const errorOf = (res: LightMyRequestResponse) => (res.json() as { error?: { message: string } }).error?.message;
+  const saveRole = (role: RoleDef, fields: RolePermissions['fields'], description = role.description) =>
+    asAdmin('PUT', `/api/roles/${role.id}`, { name: role.name, description, permissions: { ...role.permissions, fields } });
+
+  it('rejects role settings that would show hidden values through a roll-up, its filter or its relationship', async () => {
+    const marketing = (await s.users.getRole('marketing'))!;
+    try {
+      // Open Cases counts the cases of an account that are not closed.
+      expect(errorOf(await saveRole(marketing, { case: { status: 'none' } }))).toBe(
+        'Roll-up Account Open Cases is calculated from Case Status, which this role cannot see; hide it as well',
+      );
+      expect(errorOf(await saveRole(marketing, { case: { account: 'none' } }))).toBe(
+        'Roll-up Account Open Cases is calculated from Case Account, which this role cannot see; hide it as well',
+      );
+      expect((await saveRole(marketing, { case: { status: 'none', account: 'none' }, account: { open_cases: 'none' } })).statusCode).toBe(200);
+      // Problems saved before these checks existed do not block unrelated changes.
+      await s.users.upsertRole({ ...marketing, permissions: { ...marketing.permissions, fields: { case: { status: 'none' } } } });
+      expect((await saveRole(marketing, { case: { status: 'none' } }, 'Runs campaigns.')).statusCode).toBe(200);
+    } finally {
+      await s.users.upsertRole(marketing);
+    }
+  });
+
+  it('rejects field and object changes that would show a role values it cannot see', async () => {
+    // Annual Salary is sensitive, so roles that cannot view sensitive fields do not see it.
+    const payBand = { label: 'Pay Band', apiName: 'pay_band', type: 'formula', formulaType: 'number', formula: 'salary / 1000' };
+    expect(errorOf(await asAdmin('POST', '/api/objects/employee/fields', payBand))).toMatch(
+      /^Formula Employee Pay Band is calculated from Annual Salary, which the .+ role cannot see; mark it as sensitive or hide it as well$/,
+    );
+    expect((await asAdmin('POST', '/api/objects/employee/fields', { ...payBand, sensitive: true })).statusCode).toBe(201);
+    try {
+      const marketing = (await s.users.getRole('marketing'))!;
+      expect(errorOf(await saveRole(marketing, { employee: { pay_band: 'read' } }))).toBe(
+        'Formula Employee Pay Band is calculated from Annual Salary, which this role cannot see; hide it as well',
+      );
+      expect(errorOf(await asAdmin('PATCH', '/api/objects/employee/fields/pay_band', { sensitive: false }))).toMatch(/^Formula Employee Pay Band is calculated from Annual Salary/);
+      expect(errorOf(await asAdmin('PATCH', '/api/objects/employee', { nameTemplate: '{first_name} {last_name} {salary}' }))).toMatch(
+        /^Employee Annual Salary is part of the record name, so the .+ role must be able to see it$/,
+      );
+    } finally {
+      expect((await asAdmin('DELETE', '/api/objects/employee/fields/pay_band')).statusCode).toBe(200);
+    }
   });
 });
 

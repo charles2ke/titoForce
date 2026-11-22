@@ -1,5 +1,6 @@
-import { expressionIdentifiers, type FieldAccess, type FieldDef, fieldAccess, type ListViewDef, nameFieldNames, type ObjectDef, type RolePermissions } from '@titoforce/shared';
+import type { FieldAccess, FieldDef, ListViewDef, ObjectDef, RolePermissions } from '@titoforce/shared';
 import type { FastifyInstance } from 'fastify';
+import { fieldSecurityProblems, firstNewProblem } from '../platform/field-security.ts';
 import { isComputedField, type MetadataService } from '../platform/metadata.ts';
 import { assertSetup, objectPermission, visibleDef } from '../platform/principal.ts';
 import type { ListViewInput } from '../platform/views.ts';
@@ -12,7 +13,7 @@ const nullsToUndefined = <T extends object>(o: T): T => Object.fromEntries(Objec
 
 /**
  * Field permissions to store for a role: settings for unknown objects and fields are dropped, and settings that would
- * break record names, record creation or hide a value behind a visible calculation are rejected.
+ * stop the role from creating records are rejected.
  */
 function cleanFieldPermissions(metadata: MetadataService, perms: RolePermissions): Record<string, Record<string, FieldAccess>> {
   if (perms.setup) return {};
@@ -24,29 +25,13 @@ function cleanFieldPermissions(metadata: MetadataService, perms: RolePermissions
     for (const [field, access] of Object.entries(fields)) if (def.fields.some((f) => f.apiName === field)) kept[field] = access;
     if (Object.keys(kept).length) out[object] = kept;
   }
-  const next: RolePermissions = { ...perms, fields: out };
   for (const [object, fields] of Object.entries(out)) {
     const def = metadata.require(object);
-    const canCreate = (perms.objects[object] ?? perms.objects['*'])?.create ?? false;
-    const names = nameFieldNames(def);
+    if (!((perms.objects[object] ?? perms.objects['*'])?.create ?? false)) continue;
     for (const [field, access] of Object.entries(fields)) {
       const f = def.fields.find((x) => x.apiName === field)!;
-      if (access === 'none' && names.includes(field)) throw badRequest(`${def.label} ${f.label} is part of the record name, so it cannot be hidden`);
-      if (access !== 'edit' && canCreate && f.required && !isComputedField(f) && (f.defaultValue === undefined || f.defaultValue === null)) {
+      if (access !== 'edit' && f.required && !isComputedField(f) && (f.defaultValue === undefined || f.defaultValue === null)) {
         throw badRequest(`${def.label} ${f.label} is required, so a role that can create ${def.pluralLabel.toLowerCase()} must be able to edit it`);
-      }
-      if (access !== 'none') continue;
-      for (const g of def.fields) {
-        if (g.type === 'formula' && g.formula && expressionIdentifiers(g.formula).includes(field) && fieldAccess(next, object, g) !== 'none') {
-          throw badRequest(`Formula ${def.label} ${g.label} is calculated from ${f.label}; hide it as well`);
-        }
-      }
-      for (const parent of metadata.list()) {
-        for (const g of parent.fields) {
-          if (g.type === 'rollup' && g.rollup?.childObject === object && g.rollup.field === field && fieldAccess(next, parent.apiName, g) !== 'none') {
-            throw badRequest(`Roll-up ${parent.label} ${g.label} is calculated from ${def.label} ${f.label}; hide it as well`);
-          }
-        }
       }
     }
   }
@@ -232,6 +217,10 @@ export function platformRoutes(app: FastifyInstance, s: Services): void {
     // The administrator role always keeps setup access so the org cannot be locked out.
     if (id === 'admin') body.permissions.setup = true;
     body.permissions.fields = cleanFieldPermissions(s.metadata, body.permissions);
+    const current = await s.users.getRole(id);
+    const objects = s.metadata.list();
+    const problem = firstNewProblem(current ? fieldSecurityProblems(objects, current.permissions, 'this role') : [], fieldSecurityProblems(objects, body.permissions, 'this role'));
+    if (problem) throw badRequest(problem.message);
     return s.users.upsertRole({ id, ...body });
   });
 

@@ -11,6 +11,7 @@ import { HrService } from './modules/hr.ts';
 import { SalesService } from './modules/sales.ts';
 import { ChallengeStore } from './platform/challenges.ts';
 import { EventBus, JobQueue } from './platform/events.ts';
+import { assertObjectChangeAllowed } from './platform/field-security.ts';
 import { MetadataService } from './platform/metadata.ts';
 import { MfaService } from './platform/mfa.ts';
 import { NotificationService } from './platform/notifications.ts';
@@ -66,6 +67,7 @@ export async function createServices(config: Config, opts: ServiceOptions = {}):
   const mfa = new MfaService(db, secrets);
   const users = new UserService(db, mfa, challenges);
   await users.refreshFieldRestrictions();
+  metadata.validateChange = async (next) => assertObjectChangeAllowed(await users.listRoles(), metadata.list(), next);
   const sharing = new SharingService(db, metadata, users);
   const sso = new SsoService(db, users, secrets, challenges);
   if (opts.fetchImpl) sso.oidc.fetchImpl = opts.fetchImpl;

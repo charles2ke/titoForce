@@ -77,6 +77,11 @@ export class ChallengeStore {
     return changes > 0;
   }
 
+  /** Ends every pending challenge of a user, e.g. a sign-in that started with a password that has since changed. */
+  async revokeForUser(userId: string): Promise<void> {
+    await this.db.run('DELETE FROM auth_challenges WHERE user_id = ?', [userId]);
+  }
+
   /** Records `key` as used until it expires. Returns false when it was already recorded (a replay). */
   async claim(kind: string, key: string, expiresAt: Date): Promise<boolean> {
     await this.purge();

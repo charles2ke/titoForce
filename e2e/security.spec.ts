@@ -68,6 +68,13 @@ test('field permissions make fields read only or hidden for a role', async ({ pa
     await expect(name).toHaveAccessibleDescription('Part of the record name and required to create opportunities, so it must stay editable.');
     await object.evaluate((el) => el.scrollIntoView({ block: 'start' }));
     await snap(page, '13-setup-field-permissions');
+    // Expected Revenue is calculated from Probability, so hiding only Probability would still give its value away.
+    const probability = fields.getByRole('combobox', { name: 'Probability access' });
+    await probability.selectOption('Hidden');
+    await page.getByRole('button', { name: 'Save role' }).click();
+    await expect(page.getByText('Formula Opportunity Expected Revenue is calculated from Probability, which this role cannot see; hide it as well')).toBeInViewport();
+    await snap(page, '28-setup-field-permissions-rejected');
+    await probability.selectOption('Edit');
     await page.getByRole('button', { name: 'Save role' }).click();
     await expect(page.getByText('Sales Representative saved')).toBeVisible();
 
