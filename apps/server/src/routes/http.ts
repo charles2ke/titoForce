@@ -18,6 +18,8 @@ declare module 'fastify' {
   interface FastifyContextConfig {
     /** Route is reachable without a session. */
     public?: boolean;
+    /** Route accepts cross-site form posts and must do its own CSRF checks. */
+    formPost?: boolean;
   }
 }
 

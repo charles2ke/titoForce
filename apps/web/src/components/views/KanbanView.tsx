@@ -169,6 +169,8 @@ export function KanbanView({ def, base, groupBy, columns: listCols }: { def: Obj
     onSettled: () => invalidateRecordData(qc),
   });
 
+  const canMove = !!field && perms.canEditField(def, field);
+
   if (!field) return <ErrorBanner className="m-4" error={new Error(`Kanban boards need a picklist to group by; “${groupBy}” is not one.`)} />;
   if (query.isLoading) return <Loading />;
   if (query.error) return <ErrorBanner error={query.error} className="m-4" />;
@@ -242,7 +244,7 @@ export function KanbanView({ def, base, groupBy, columns: listCols }: { def: Obj
                     fields={cardFields}
                     columns={columns}
                     current={col.key}
-                    draggable={perms.canEdit(def.apiName, r.ownerId)}
+                    draggable={canMove && perms.canEdit(r)}
                     dragging={dragging === r.id}
                     onDragStart={(e) => {
                       e.dataTransfer.setData('text/plain', r.id);

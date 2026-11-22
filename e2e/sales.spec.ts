@@ -6,7 +6,7 @@ test('signs in through the login form and lands on the Sales home', async ({ pag
   await expect(page).toHaveURL(/\/login/);
   await page.getByLabel('Email').fill(email('maria'));
   await page.getByLabel('Password').fill(PASSWORD);
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
   await expect(page).toHaveURL(/\/app\/sales$/);
   await expect(page.getByRole('heading', { name: /, Maria$/ })).toBeVisible();

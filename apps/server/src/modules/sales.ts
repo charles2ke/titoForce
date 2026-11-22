@@ -1,7 +1,7 @@
 import type { CrmRecord, FilterGroup, RecordData, RefMap } from '@titoforce/shared';
 import type { Db } from '../db/database.ts';
 import type { MetadataService } from '../platform/metadata.ts';
-import { type Principal, systemPrincipal } from '../platform/principal.ts';
+import { fieldAccessOf, type Principal, systemPrincipal } from '../platform/principal.ts';
 import type { RecordService } from '../platform/records.ts';
 import { addDays, conflict, isoDate } from '../util.ts';
 
@@ -45,11 +45,15 @@ export class SalesService {
     this.records = records;
   }
 
-  /** Copies target object fields and the system owner column. */
-  private pick(object: string, values: RecordData): RecordData {
+  /** Copies target object fields and the system owner column. With a principal, fields they cannot edit are skipped. */
+  private pick(object: string, values: RecordData, principal?: Principal): RecordData {
     const def = this.metadata.require(object);
     const out: RecordData = {};
-    for (const [k, v] of Object.entries(values)) if (v !== undefined && v !== null && v !== '' && (k === 'owner_id' || def.fields.some((f) => f.apiName === k))) out[k] = v;
+    for (const [k, v] of Object.entries(values)) {
+      if (v === undefined || v === null || v === '') continue;
+      const f = def.fields.find((x) => x.apiName === k);
+      if (k === 'owner_id' || (f && (!principal || fieldAccessOf(principal, object, f) === 'edit'))) out[k] = v;
+    }
     return out;
   }
 
@@ -88,7 +92,7 @@ export class SalesService {
             employees: f.employees,
             type: 'Prospect',
             owner_id: lead.ownerId,
-          }),
+          }, principal),
         );
         created.push(account);
       }
@@ -104,7 +108,7 @@ export class SalesService {
           account: account.id,
           lead_source: f.lead_source,
           owner_id: lead.ownerId,
-        }),
+        }, principal),
         { allowDuplicates: true },
       );
       created.push(contact);
@@ -123,7 +127,7 @@ export class SalesService {
             close_date: isoDate(addDays(new Date(), 30)),
             lead_source: f.lead_source,
             owner_id: lead.ownerId,
-          }),
+          }, principal),
         );
         created.push(opportunity);
       }

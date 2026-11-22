@@ -1,4 +1,4 @@
-import type { AccessLevel, ObjectPermission, RolePermissions } from '@titoforce/shared';
+import { type AccessLevel, type FieldAccess, type FieldDef, fieldAccess, type ObjectDef, type ObjectPermission, type RolePermissions } from '@titoforce/shared';
 import { forbidden } from '../util.ts';
 
 export type PrincipalType = 'user' | 'agent' | 'automation' | 'approval' | 'system' | 'public';
@@ -9,6 +9,8 @@ export interface Principal {
   userId: string | null;
   name: string;
   permissions: RolePermissions | null;
+  /** Role of the user behind the principal; sharing rules share records with roles. */
+  roleId?: string | null;
   agentId?: string;
   /** Automation recursion depth. */
   depth?: number;
@@ -26,14 +28,15 @@ export function objectPermission(principal: Principal, object: string): ObjectPe
   return principal.permissions.objects[object] ?? principal.permissions.objects['*'] ?? NO_ACCESS;
 }
 
-function allows(level: AccessLevel, ownerId: string | null, principal: Principal): boolean {
-  if (level === 'all') return true;
-  if (level === 'own') return !!principal.userId && ownerId === principal.userId;
-  return false;
-}
-
-export function canRead(principal: Principal, object: string, ownerId: string | null): boolean {
-  return allows(objectPermission(principal, object).read, ownerId, principal);
+/**
+ * Giving a record to another owner needs edit access to every record of the object, or ownership of the record.
+ * Edit access from sharing rules is not enough: taking ownership would also grant delete access.
+ */
+export function canChangeOwner(principal: Principal, object: string, ownerId: string | null): boolean {
+  if (!principal.permissions) return true;
+  const perm = objectPermission(principal, object);
+  if (perm.read === 'all' && perm.edit === 'all') return true;
+  return perm.edit !== 'none' && !!principal.userId && ownerId === principal.userId;
 }
 
 export function assertCanReadObject(principal: Principal, object: string): AccessLevel {
@@ -46,16 +49,33 @@ export function assertCanCreate(principal: Principal, object: string): void {
   if (!objectPermission(principal, object).create) throw forbidden(`You cannot create ${object} records`);
 }
 
-export function assertCanEdit(principal: Principal, object: string, ownerId: string | null): void {
-  if (!allows(objectPermission(principal, object).edit, ownerId, principal)) throw forbidden(`You cannot edit this ${object} record`);
+/** The principal's field-level access: `edit`, `read` (read only) or `none` (hidden). */
+export function fieldAccessOf(principal: Principal, object: string, field: Pick<FieldDef, 'apiName' | 'sensitive'>): FieldAccess {
+  return fieldAccess(principal.permissions, object, field);
 }
 
-export function assertCanDelete(principal: Principal, object: string, ownerId: string | null): void {
-  if (!allows(objectPermission(principal, object).delete, ownerId, principal)) throw forbidden(`You cannot delete this ${object} record`);
+export function canSeeField(principal: Principal, object: string, field: Pick<FieldDef, 'apiName' | 'sensitive'>): boolean {
+  return fieldAccessOf(principal, object, field) !== 'none';
 }
 
-export function canViewSensitive(principal: Principal): boolean {
-  return !principal.permissions || principal.permissions.viewSensitive;
+/** The object definition without the fields hidden from the principal. */
+export function visibleDef(principal: Principal, def: ObjectDef): ObjectDef {
+  if (!principal.permissions) return def;
+  const fields = def.fields.filter((f) => canSeeField(principal, def.apiName, f));
+  if (fields.length === def.fields.length) return def;
+  const visible = new Set(fields.map((f) => f.apiName));
+  const keep = (list?: string[]) => list?.filter((f) => visible.has(f));
+  const one = (f?: string) => (f && visible.has(f) ? f : undefined);
+  return {
+    ...def,
+    fields,
+    statusField: one(def.statusField),
+    dateField: one(def.dateField),
+    timeline: def.timeline && !(visible.has(def.timeline.start) && visible.has(def.timeline.end)) ? null : def.timeline,
+    highlightFields: keep(def.highlightFields),
+    listFields: keep(def.listFields),
+    duplicateFields: keep(def.duplicateFields),
+  };
 }
 
 export function assertSetup(principal: Principal): void {

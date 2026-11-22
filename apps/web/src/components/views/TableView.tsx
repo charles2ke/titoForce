@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Ellipsis, Pencil, Trash } from 'lucide
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { api, errorMessage } from '../../api.ts';
-import { fieldDef, isEditable, plural, valueOf } from '../../lib/format.ts';
+import { fieldDef, plural, valueOf } from '../../lib/format.ts';
 import { invalidateRecordData, usePermissions } from '../../lib/hooks.ts';
 import { useConfirm, useToast } from '../feedback.tsx';
 import { FieldInput } from '../FieldInput.tsx';
@@ -28,7 +28,8 @@ type BulkResult = { done: number; errors: { id: string; message: string }[] };
 function BulkEditModal({ def, ids, open, onClose, onDone }: { def: ObjectDef; ids: string[]; open: boolean; onClose: () => void; onDone: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const fields = def.fields.filter((f) => isEditable(def, f) && f.apiName !== 'name');
+  const perms = usePermissions();
+  const fields = def.fields.filter((f) => perms.canEditField(def, f) && f.apiName !== 'name');
   const [field, setField] = useState(fields[0]?.apiName ?? '');
   const [value, setValue] = useState<unknown>(null);
   const f = fields.find((x) => x.apiName === field);
@@ -92,8 +93,8 @@ export function RowMenu({ def, record, refs }: { def: ObjectDef; record: CrmReco
   const toast = useToast();
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
-  const canEdit = perms.canEdit(def.apiName, record.ownerId);
-  const canDelete = perms.canDelete(def.apiName, record.ownerId);
+  const canEdit = perms.canEdit(record);
+  const canDelete = perms.canDelete(record);
   if (!canEdit && !canDelete) return null;
   const remove = async () => {
     if (!(await confirm({ title: `Delete ${def.label.toLowerCase()}?`, message: `“${record.name}” will be permanently deleted.`, confirmLabel: 'Delete', danger: true }))) return;

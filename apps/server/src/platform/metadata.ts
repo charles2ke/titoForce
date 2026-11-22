@@ -267,6 +267,7 @@ export class MetadataService {
       await tx.run('DELETE FROM objects WHERE api_name = ?', [apiName]);
       await tx.run('DELETE FROM automations WHERE object_api_name = ?', [apiName]);
       await tx.run('DELETE FROM list_views WHERE object_api_name = ?', [apiName]);
+      await tx.run('DELETE FROM sharing_rules WHERE object_api_name = ?', [apiName]);
     });
     await this.load();
   }

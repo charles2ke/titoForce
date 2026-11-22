@@ -79,8 +79,61 @@ export const role = z.object({
     viewSensitive: z.boolean(),
     manageAutomations: z.boolean(),
     manageAgents: z.boolean(),
+    requireMfa: z.boolean().default(false),
     objects: z.record(z.string(), z.object({ read: access, create: z.boolean(), edit: access, delete: access })),
+    fields: z.record(z.string(), z.record(z.string(), z.enum(['edit', 'read', 'none']))).default({}),
   }),
+});
+
+// ---------- security ----------
+
+export const sharingRule = z.object({
+  object: apiName,
+  name: z.string().min(1).max(120),
+  description: z.string().max(500).default(''),
+  type: z.enum(['owner', 'criteria']),
+  ownerRoles: z.array(apiName).max(50).default([]),
+  criteria: filterGroup.nullable().default(null),
+  shareWith: z.array(apiName).min(1).max(50),
+  access: z.enum(['read', 'edit']),
+  active: z.boolean().default(true),
+});
+
+const mfaCode = z.string().min(1).max(40);
+export const mfaChallenge = z.object({ challenge: z.string().min(1).max(200) });
+export const mfaVerify = z.object({ challenge: z.string().min(1).max(200), code: mfaCode, issueToken: z.boolean().optional() });
+/** Enabling, disabling and new recovery codes need the password and a current code. */
+export const mfaConfirm = z.object({ code: mfaCode, password: z.string().min(1).max(200) });
+
+const httpsUrl = z.string().min(1).max(2000);
+export const ssoProvider = z.object({
+  id: z.string().regex(/^[a-z][a-z0-9-]{1,39}$/, 'Ids use lowercase letters, numbers and dashes'),
+  type: z.enum(['oidc', 'saml']),
+  name: z.string().min(1).max(80),
+  enabled: z.boolean().default(true),
+  oidc: z
+    .object({
+      issuer: httpsUrl,
+      clientId: z.string().min(1).max(500),
+      scopes: z.string().max(500).default('openid email profile'),
+      tokenAuthMethod: z.enum(['client_secret_basic', 'client_secret_post']).default('client_secret_basic'),
+    })
+    .nullish(),
+  saml: z
+    .object({
+      entryPoint: httpsUrl,
+      idpIssuer: z.string().max(2000).nullish(),
+      idpCert: z.string().min(1).max(50_000),
+      spEntityId: z.string().max(2000).nullish(),
+      emailAttribute: z.string().max(500).nullish(),
+      nameAttribute: z.string().max(500).nullish(),
+    })
+    .nullish(),
+  /** OIDC client secret; omitted keeps the stored one, '' removes it. */
+  clientSecret: z.string().max(2000).optional(),
+  jit: z.boolean().default(false),
+  defaultRole: apiName.nullish(),
+  allowedDomains: z.array(z.string().min(1).max(253)).max(50).default([]),
 });
 
 export const createObject = z.object({

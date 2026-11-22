@@ -3,12 +3,14 @@
 // and writes a markdown answer. It is intentionally transparent and limited; it is not an LLM.
 import {
   type AgentDef,
+  fieldAccess,
   type FieldDef,
   type FilterRule,
   isBlank,
   numberFormat,
   type ObjectDef,
   type ReportResult,
+  type RolePermissions,
   type SearchResultGroup,
   stringify,
   type UserDTO,
@@ -33,8 +35,13 @@ export interface BrainCall {
 export type BrainPlan = AsyncGenerator<BrainCall, string, ToolOutcome>;
 type Sub<T> = AsyncGenerator<BrainCall, T, ToolOutcome>;
 
+/** Object definitions as the acting user sees them (fields hidden by field-level security are left out). */
+export type BrainMetadata = Pick<MetadataService, 'get' | 'list' | 'require'>;
+
 export interface BrainContext {
-  metadata: MetadataService;
+  metadata: BrainMetadata;
+  /** Permissions of the acting user; `null` in system context. */
+  permissions: RolePermissions | null;
   agent: AgentDef;
   /** Tools this agent may call (already filtered by autonomy). */
   tools: Set<string>;
@@ -154,7 +161,7 @@ const SYNONYMS: [string, RegExp][] = [
 const LEADING_OBJECT_RE =
   /^(?:the\s+|a\s+|an\s+|my\s+|our\s+)?(?:leads?|accounts?|deals?|opportunit(?:y|ies)|opps?|cases?|tickets?|contacts?|compan(?:y|ies)|customers?|employees?|projects?|records?|candidates?|quotes?|campaigns?|tasks?)\b\s*/i;
 
-export function detectObject(metadata: MetadataService, lower: string): ObjectDef | null {
+export function detectObject(metadata: BrainMetadata, lower: string): ObjectDef | null {
   const hits: { def: ObjectDef; index: number; len: number }[] = [];
   for (const def of metadata.list()) {
     for (const label of new Set([def.label, def.pluralLabel, def.apiName.replace(/_/g, ' ')])) {
@@ -689,7 +696,7 @@ async function* createRecord(ctx: BrainContext, text: string, lower: string): Br
   if (!def) return 'What should I create? For example: `create a lead named Dana Lee at Initech`.';
   const fields: Record<string, unknown> = {};
   const notes: string[] = [];
-  const editable = def.fields.filter((f) => f.type !== 'formula' && f.type !== 'rollup' && !f.sensitive);
+  const editable = def.fields.filter((f) => f.type !== 'formula' && f.type !== 'rollup' && !f.sensitive && fieldAccess(ctx.permissions, def.apiName, f) === 'edit');
   const nameStop = String.raw`(?=\s+(?:at|from|for|with|in|worth|amount|priority|stage|status|email|phone|due|closing|who|that|and|title)\b|[,;.]|$)`;
   const name = quoted(text) ?? new RegExp(String.raw`\b(?:named|called|titled|subject|for)\s+(.+?)${nameStop}`, 'i').exec(text)?.[1]?.trim() ?? null;
   let rest = name ? text.replace(name, ' ') : text;
@@ -821,6 +828,7 @@ async function* updateRecord(ctx: BrainContext, text: string): BrainPlan {
       }
       if (!f) return `I couldn't tell which ${def.label.toLowerCase()} field "${v}" belongs to. Try \`set the <field> of "${t.name}" to ${v}\`.`;
       if (f.type === 'formula' || f.type === 'rollup') return `${f.label} is calculated automatically and can't be set.`;
+      if (fieldAccess(ctx.permissions, def.apiName, f) !== 'edit') return `${f.label} is read-only for you.`;
       let coerced: unknown = v;
       if (f.type === 'picklist') coerced = matchOption(f, v);
       else if (f.type === 'currency' || f.type === 'number' || f.type === 'percent') coerced = parseMoney(v);

@@ -4,7 +4,7 @@ import { Check, Pencil } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { api, errorMessage } from '../../api.ts';
 import { hex } from '../../lib/colors.ts';
-import { formatDateTime, isEditable, relativeTime } from '../../lib/format.ts';
+import { formatDateTime, relativeTime } from '../../lib/format.ts';
 import { invalidateRecordData, usePermissions } from '../../lib/hooks.ts';
 import { useToast } from '../feedback.tsx';
 import { FieldInput, UserSelect } from '../FieldInput.tsx';
@@ -33,7 +33,7 @@ export function PathBar({ def, record }: { def: ObjectDef; record: CrmRecord }) 
   if (!field || options.length < 2) return null;
   const current = record.fields[field.apiName];
   const index = options.findIndex((o) => o.value === current);
-  const canEdit = perms.canEdit(def.apiName, record.ownerId);
+  const canEdit = perms.canEdit(record) && perms.canEditField(def, field);
   const pick = (value: string) =>
     update.mutate(
       { [field.apiName]: value },
@@ -202,7 +202,7 @@ function Stamp({ label, at, by, refs }: { label: string; at: string; by: string 
 
 export function DetailsPanel({ def, record, refs }: { def: ObjectDef; record: CrmRecord; refs: RefMap }) {
   const perms = usePermissions();
-  const canEdit = perms.canEdit(def.apiName, record.ownerId);
+  const canEdit = perms.canEdit(record);
   const sections = new Map<string, FieldDef[]>();
   for (const f of def.fields) {
     const s = f.section || `${def.label} Information`;
@@ -214,14 +214,14 @@ export function DetailsPanel({ def, record, refs }: { def: ObjectDef; record: Cr
         <Card key={title} title={title}>
           <dl className="grid gap-x-8 gap-y-3 @lg:grid-cols-2">
             {fields.map((f) => (
-              <InlineField key={f.apiName} def={def} record={record} refs={refs} field={f} editable={canEdit && isEditable(def, f)} wide={f.type === 'longtext'} />
+              <InlineField key={f.apiName} def={def} record={record} refs={refs} field={f} editable={canEdit && perms.canEditField(def, f)} wide={f.type === 'longtext'} />
             ))}
           </dl>
         </Card>
       ))}
       <Card title="System Information">
         <dl className="grid gap-x-8 gap-y-3 @lg:grid-cols-2">
-          <OwnerField def={def} record={record} refs={refs} editable={canEdit} />
+          <OwnerField def={def} record={record} refs={refs} editable={perms.canChangeOwner(record)} />
           <div className="min-w-0 border-b border-slate-100 pb-2">
             <dt className="text-xs font-medium text-slate-500">Record ID</dt>
             <dd className="mt-0.5 font-mono text-xs text-slate-700">{record.id}</dd>

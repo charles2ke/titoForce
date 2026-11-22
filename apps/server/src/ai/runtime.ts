@@ -15,12 +15,13 @@ import {
 import type { AiConfig } from '../config.ts';
 import { type Db, parseJson } from '../db/database.ts';
 import type { JobQueue } from '../platform/events.ts';
-import { assertManageAgents, objectPermission, type Principal, systemPrincipal } from '../platform/principal.ts';
+import type { MetadataService } from '../platform/metadata.ts';
+import { assertManageAgents, objectPermission, type Principal, systemPrincipal, visibleDef } from '../platform/principal.ts';
 import { AppError, badRequest, forbidden, newId, notFound, nowIso, truncate } from '../util.ts';
 import { AnthropicProvider } from './providers/anthropic.ts';
 import { OpenAiProvider } from './providers/openai.ts';
 import type { LlmMessage, LlmProvider } from './providers/types.ts';
-import { plan, type ToolOutcome } from './rules-brain.ts';
+import { type BrainMetadata, plan, type ToolOutcome } from './rules-brain.ts';
 import { TOOL_MAP, TOOLS, type ToolDef, type ToolDeps, toolInfo } from './tools.ts';
 
 export type AgentInput = Omit<AgentDef, 'id' | 'createdAt' | 'updatedAt' | 'builtIn'>;
@@ -93,6 +94,18 @@ function clip(value: unknown): unknown {
 }
 
 const canManageAgents = (p: Principal) => !p.permissions || p.permissions.manageAgents || p.permissions.setup;
+
+/** Object definitions without the fields hidden from the principal, so the offline brain never plans with them. */
+function metadataFor(metadata: MetadataService, principal: Principal): BrainMetadata {
+  return {
+    get: (apiName) => {
+      const def = metadata.get(apiName);
+      return def && visibleDef(principal, def);
+    },
+    list: () => metadata.list().map((def) => visibleDef(principal, def)),
+    require: (apiName) => visibleDef(principal, metadata.require(apiName)),
+  };
+}
 
 /** AI agents: configuration, execution (LLM tool loop or offline rules brain), approvals of agent actions and chat history. */
 export class AgentService {
@@ -313,7 +326,8 @@ export class AgentService {
   private async runBrain(state: RunState, input: string): Promise<string> {
     const users = (await this.deps.users.listUsers(false)).filter((u) => u.active);
     const gen = plan(input, {
-      metadata: this.deps.metadata,
+      metadata: metadataFor(this.deps.metadata, state.principal),
+      permissions: state.principal.permissions,
       agent: state.agent,
       tools: new Set(this.allowedTools(state.agent).map((t) => t.name)),
       recordId: state.recordId,

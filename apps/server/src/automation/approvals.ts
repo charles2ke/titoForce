@@ -3,7 +3,7 @@ import { type Db, parseJson } from '../db/database.ts';
 import type { EventBus } from '../platform/events.ts';
 import type { MetadataService } from '../platform/metadata.ts';
 import type { NotificationService } from '../platform/notifications.ts';
-import { canRead, type Principal } from '../platform/principal.ts';
+import type { Principal } from '../platform/principal.ts';
 import { type RecordService, toFlat } from '../platform/records.ts';
 import type { UserService } from '../platform/users.ts';
 import { AppError, badRequest, conflict, forbidden, newId, notFound, nowIso } from '../util.ts';
@@ -210,9 +210,9 @@ export class ApprovalService {
   }
 
   async submit(principal: Principal, recordId: string, opts: { processId?: string; comment?: string } = {}): Promise<ApprovalRequest> {
-    const rec = await this.records.get(principal, null, recordId);
+    // Checks read access, including access through sharing rules.
+    await this.records.get(principal, null, recordId);
     const raw = (await this.records.getRaw(recordId))!;
-    if (principal.permissions && !canRead(principal, rec.object, rec.ownerId)) throw forbidden();
     return this.submitRecord(principal, raw, opts.processId, opts.comment);
   }
 

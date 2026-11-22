@@ -21,6 +21,7 @@ const ai = services.agents.status();
 app.log.info(`titoForce is running at http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`);
 app.log.info(`AI: ${ai.configured ? `${ai.provider} (${ai.model})` : 'offline rules engine (set OPENAI_API_KEY or ANTHROPIC_API_KEY to use an LLM)'}`);
 if (seed.demo) app.log.info('Demo data is loaded: sign in as maria@titoforce.example (or any demo user) with password "titoforce"');
+if (!config.secretKey && process.env.NODE_ENV === 'production') app.log.warn('TITO_SECRET_KEY is not set: two-factor secrets and SSO client secrets are stored unencrypted');
 
 let closing = false;
 async function shutdown(signal: string): Promise<void> {

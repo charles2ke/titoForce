@@ -1,4 +1,4 @@
-import { Bot, Database, History, LayoutGrid, Lock, type LucideIcon, Settings, ShieldCheck, Stamp, Users, Workflow } from 'lucide-react';
+import { Bot, Database, History, KeyRound, LayoutGrid, Lock, type LucideIcon, Settings, Share2, ShieldCheck, Stamp, Users, Workflow } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { Navigate, NavLink, Outlet, useLocation } from 'react-router';
 import { cx, EmptyState } from '../../components/ui.tsx';
@@ -17,6 +17,8 @@ const GROUPS: { label: string; items: Section[] }[] = [
     items: [
       { id: 'users', label: 'Users', icon: Users, allowed: admin },
       { id: 'roles', label: 'Roles & Permissions', icon: ShieldCheck, allowed: admin },
+      { id: 'sharing', label: 'Sharing Rules', icon: Share2, allowed: admin },
+      { id: 'sso', label: 'Single Sign-On', icon: KeyRound, allowed: admin },
     ],
   },
   { label: 'Experience', items: [{ id: 'apps', label: 'Apps', icon: LayoutGrid, allowed: admin }] },

@@ -1,18 +1,57 @@
-import type { FieldDef, ListViewDef, ObjectDef } from '@titoforce/shared';
+import { expressionIdentifiers, type FieldAccess, type FieldDef, fieldAccess, type ListViewDef, nameFieldNames, type ObjectDef, type RolePermissions } from '@titoforce/shared';
 import type { FastifyInstance } from 'fastify';
-import { assertSetup, canViewSensitive, objectPermission, type Principal } from '../platform/principal.ts';
+import { isComputedField, type MetadataService } from '../platform/metadata.ts';
+import { assertSetup, objectPermission, visibleDef } from '../platform/principal.ts';
 import type { ListViewInput } from '../platform/views.ts';
 import type { Services } from '../services.ts';
 import { badRequest, conflict, notFound } from '../util.ts';
 import { auth, intParam, params, parse, parsePatch, principalOf, query } from './http.ts';
 import * as schemas from './schemas.ts';
 
-/** Object metadata as a user sees it: sensitive field definitions are hidden from roles that cannot see their values. */
-function visibleObject(p: Principal, def: ObjectDef): ObjectDef {
-  return canViewSensitive(p) ? def : { ...def, fields: def.fields.filter((f) => !f.sensitive) };
-}
-
 const nullsToUndefined = <T extends object>(o: T): T => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v ?? undefined])) as T;
+
+/**
+ * Field permissions to store for a role: settings for unknown objects and fields are dropped, and settings that would
+ * break record names, record creation or hide a value behind a visible calculation are rejected.
+ */
+function cleanFieldPermissions(metadata: MetadataService, perms: RolePermissions): Record<string, Record<string, FieldAccess>> {
+  if (perms.setup) return {};
+  const out: Record<string, Record<string, FieldAccess>> = {};
+  for (const [object, fields] of Object.entries(perms.fields ?? {})) {
+    const def = metadata.get(object);
+    if (!def) continue;
+    const kept: Record<string, FieldAccess> = {};
+    for (const [field, access] of Object.entries(fields)) if (def.fields.some((f) => f.apiName === field)) kept[field] = access;
+    if (Object.keys(kept).length) out[object] = kept;
+  }
+  const next: RolePermissions = { ...perms, fields: out };
+  for (const [object, fields] of Object.entries(out)) {
+    const def = metadata.require(object);
+    const canCreate = (perms.objects[object] ?? perms.objects['*'])?.create ?? false;
+    const names = nameFieldNames(def);
+    for (const [field, access] of Object.entries(fields)) {
+      const f = def.fields.find((x) => x.apiName === field)!;
+      if (access === 'none' && names.includes(field)) throw badRequest(`${def.label} ${f.label} is part of the record name, so it cannot be hidden`);
+      if (access !== 'edit' && canCreate && f.required && !isComputedField(f) && (f.defaultValue === undefined || f.defaultValue === null)) {
+        throw badRequest(`${def.label} ${f.label} is required, so a role that can create ${def.pluralLabel.toLowerCase()} must be able to edit it`);
+      }
+      if (access !== 'none') continue;
+      for (const g of def.fields) {
+        if (g.type === 'formula' && g.formula && expressionIdentifiers(g.formula).includes(field) && fieldAccess(next, object, g) !== 'none') {
+          throw badRequest(`Formula ${def.label} ${g.label} is calculated from ${f.label}; hide it as well`);
+        }
+      }
+      for (const parent of metadata.list()) {
+        for (const g of parent.fields) {
+          if (g.type === 'rollup' && g.rollup?.childObject === object && g.rollup.field === field && fieldAccess(next, parent.apiName, g) !== 'none') {
+            throw badRequest(`Roll-up ${parent.label} ${g.label} is calculated from ${def.label} ${f.label}; hide it as well`);
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
 
 const RECALC_OBJECT_KEYS = ['nameField', 'nameTemplate'];
 const RECALC_FIELD_KEYS = ['formula', 'formulaType', 'rollup', 'precision'];
@@ -26,14 +65,14 @@ export function platformRoutes(app: FastifyInstance, s: Services): void {
     return s.metadata
       .list()
       .filter((o) => objectPermission(p, o.apiName).read !== 'none')
-      .map((o) => visibleObject(p, o));
+      .map((o) => visibleDef(p, o));
   });
 
   app.get('/api/objects/:api', async (req) => {
     const p = principalOf(req);
     const def = s.metadata.get(params(req).api!);
     if (!def || objectPermission(p, def.apiName).read === 'none') throw notFound('Object not found');
-    return visibleObject(p, def);
+    return visibleDef(p, def);
   });
 
   app.post('/api/objects', async (req, reply) => {
@@ -54,7 +93,9 @@ export function platformRoutes(app: FastifyInstance, s: Services): void {
 
   app.delete('/api/objects/:api', async (req) => {
     assertSetup(principalOf(req));
-    await s.metadata.deleteObject(params(req).api!);
+    const api = params(req).api!;
+    await s.metadata.deleteObject(api);
+    await s.users.removeFieldPermissions(api);
     return { ok: true };
   });
 
@@ -80,8 +121,10 @@ export function platformRoutes(app: FastifyInstance, s: Services): void {
   app.delete('/api/objects/:api/fields/:field', async (req) => {
     assertSetup(principalOf(req));
     const { api, field } = params(req);
+    await s.sharing.assertFieldUnused(api!, field!);
     const def = await s.metadata.deleteField(api!, field!);
     await s.records.purgeField(api!, field!);
+    await s.users.removeFieldPermissions(api!, field!);
     return def;
   });
 
@@ -134,10 +177,13 @@ export function platformRoutes(app: FastifyInstance, s: Services): void {
 
   // ---------- users & roles ----------
 
-  // Everyone can see the user directory (owner pickers, @-assignments).
+  // Everyone can see the user directory (owner pickers, @-assignments); administrators also see who uses two-factor sign-in.
   app.get('/api/users', async (req) => {
-    principalOf(req);
-    return s.users.listUsers(true);
+    const p = principalOf(req);
+    const users = await s.users.listUsers(true);
+    if (p.permissions && !p.permissions.setup) return users;
+    const mfa = await s.mfa.enabledUserIds();
+    return users.map((u) => ({ ...u, mfaEnabled: mfa.has(u.id) }));
   });
 
   app.post('/api/users', async (req, reply) => {
@@ -161,6 +207,15 @@ export function platformRoutes(app: FastifyInstance, s: Services): void {
     return s.users.updateUser(id, patch);
   });
 
+  // Administrator reset, e.g. after a user lost their authenticator; they set it up again at their next sign-in if required.
+  app.delete('/api/users/:id/mfa', async (req) => {
+    assertSetup(principalOf(req));
+    const id = params(req).id!;
+    if (!(await s.users.getUser(id))) throw notFound('User not found');
+    if (!(await s.mfa.disable(id))) throw badRequest('This user has not set up two-factor authentication');
+    return { ok: true };
+  });
+
   app.get('/api/roles', async (req) => {
     assertSetup(principalOf(req));
     return s.users.listRoles();
@@ -176,12 +231,38 @@ export function platformRoutes(app: FastifyInstance, s: Services): void {
     }
     // The administrator role always keeps setup access so the org cannot be locked out.
     if (id === 'admin') body.permissions.setup = true;
+    body.permissions.fields = cleanFieldPermissions(s.metadata, body.permissions);
     return s.users.upsertRole({ id, ...body });
   });
 
   app.delete('/api/roles/:id', async (req) => {
     assertSetup(principalOf(req));
     await s.users.deleteRole(params(req).id!);
+    return { ok: true };
+  });
+
+  // ---------- sharing rules ----------
+
+  app.get('/api/sharing-rules', async (req) => {
+    assertSetup(principalOf(req));
+    return s.sharing.list(query(req).object || undefined);
+  });
+
+  app.post('/api/sharing-rules', async (req, reply) => {
+    assertSetup(principalOf(req));
+    const rule = await s.sharing.create(parse(schemas.sharingRule, req.body));
+    reply.code(201);
+    return rule;
+  });
+
+  app.put('/api/sharing-rules/:id', async (req) => {
+    assertSetup(principalOf(req));
+    return s.sharing.update(params(req).id!, parse(schemas.sharingRule, req.body));
+  });
+
+  app.delete('/api/sharing-rules/:id', async (req) => {
+    assertSetup(principalOf(req));
+    await s.sharing.delete(params(req).id!);
     return { ok: true };
   });
 

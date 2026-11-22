@@ -5,6 +5,11 @@ export const TABLES = [
   'roles',
   'users',
   'sessions',
+  'user_mfa',
+  'auth_challenges',
+  'sso_providers',
+  'user_identities',
+  'sharing_rules',
   'objects',
   'fields',
   'records',
@@ -248,6 +253,70 @@ const MIGRATIONS: { version: number; statements: (jsonType: string) => string[] 
       `CREATE TABLE lead_conversion_claims (
         lead_id TEXT PRIMARY KEY REFERENCES records(id) ON DELETE CASCADE
       )`,
+    ],
+  },
+  {
+    // Multi-factor authentication, single sign-on and sharing rules.
+    version: 3,
+    statements: () => [
+      `CREATE TABLE user_mfa (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        secret TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        last_step INTEGER NOT NULL DEFAULT 0,
+        recovery_codes TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        enabled_at TEXT
+      )`,
+      // Short-lived sign-in state (second-factor steps, SSO requests); ids are SHA-256 hashes of the tokens.
+      `CREATE TABLE auth_challenges (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        data TEXT NOT NULL DEFAULT '{}',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX idx_auth_challenges_expires ON auth_challenges (expires_at)`,
+      `CREATE TABLE sso_providers (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        config TEXT NOT NULL,
+        secret TEXT,
+        jit INTEGER NOT NULL DEFAULT 0,
+        default_role TEXT REFERENCES roles(id),
+        allowed_domains TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE user_identities (
+        provider_id TEXT NOT NULL REFERENCES sso_providers(id) ON DELETE CASCADE,
+        subject TEXT NOT NULL,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        email TEXT,
+        created_at TEXT NOT NULL,
+        last_login_at TEXT,
+        PRIMARY KEY (provider_id, subject)
+      )`,
+      `CREATE INDEX idx_user_identities_user ON user_identities (user_id)`,
+      `CREATE TABLE sharing_rules (
+        id TEXT PRIMARY KEY,
+        object_api_name TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        type TEXT NOT NULL,
+        owner_roles TEXT NOT NULL DEFAULT '[]',
+        criteria TEXT,
+        share_with TEXT NOT NULL DEFAULT '[]',
+        access TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX idx_sharing_rules_object ON sharing_rules (object_api_name)`,
     ],
   },
 ];
