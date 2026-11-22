@@ -18,6 +18,7 @@ import {
 } from '@titoforce/shared';
 import { type Db, jsonText, parseJson, type SqlParam } from '../db/database.ts';
 import { AppError, badRequest, chunk, clamp, forbidden, newId, notFound, nowIso, placeholders, truncate } from '../util.ts';
+import { indexContactPoints, touchesContactPoints } from './contact-points.ts';
 import type { EventBus } from './events.ts';
 import { isComputedField, type MetadataService } from './metadata.ts';
 import {
@@ -197,9 +198,14 @@ export interface WriteOptions {
   silent?: boolean;
   /** Save even when duplicate rules match. */
   allowDuplicates?: boolean;
-  /** Backdated created/updated timestamp (seeding only). */
+  /** Backdated created/updated timestamp (seeding, and activities logged from email). */
   timestamp?: string;
+  /** Extra writes committed in the same transaction as a new record (e.g. the details of a logged email). */
+  afterInsert?: (tx: Db, record: CrmRecord) => Promise<void>;
 }
+
+/** Adds integration details (email, call, meeting, files) to the activity items of a timeline. */
+export type TimelineEnricher = (items: TimelineItem[], activities: CrmRecord[]) => Promise<void>;
 
 export interface RelatedList {
   object: string;
@@ -220,6 +226,9 @@ export class RecordService {
   private metadata: MetadataService;
   private users: UserService;
   private events: EventBus;
+
+  /** Set by the integrations layer. */
+  enrichTimeline: TimelineEnricher | null = null;
 
   constructor(db: Db, metadata: MetadataService, users: UserService, events: EventBus) {
     this.db = db;
@@ -396,8 +405,9 @@ export class RecordService {
         sort: { field: 'created_at', dir: 'desc' },
       });
       refs = res.refs;
+      const activityItems: TimelineItem[] = [];
       for (const a of res.records) {
-        items.push({
+        activityItems.push({
           id: a.id,
           kind: 'activity',
           at: a.createdAt,
@@ -411,6 +421,8 @@ export class RecordService {
           dueDate: (a.fields.due_date as string | undefined) ?? null,
         });
       }
+      if (this.enrichTimeline && activityItems.length) await this.enrichTimeline(activityItems, res.records);
+      items.push(...activityItems);
     }
 
     const history = await this.db.all<{ id: string; event: string; changes: unknown; actor_type: string; actor_name: string | null; created_at: string }>(
@@ -705,7 +717,9 @@ export class RecordService {
         [id, object, name, owner, JSON.stringify(fields), this.searchText(def, name, fields), now, now, principal.userId, principal.userId],
       );
       await this.writeHistory(tx, record, 'created', null, principal);
+      await indexContactPoints(tx, def, id, fields, true);
       await this.refreshRollups(tx, object, [fields]);
+      if (opts.afterInsert) await opts.afterInsert(tx, record);
     });
 
     if (!opts.silent) {
@@ -798,6 +812,7 @@ export class RecordService {
       ]);
       if (!result.changes) return false;
       if (history.length) await this.writeHistory(tx, record, 'updated', history, principal);
+      if (touchesContactPoints(def, changed)) await indexContactPoints(tx, def, id, fields);
       await this.refreshRollups(tx, object, [current.fields, fields]);
       return true;
     });
@@ -913,6 +928,7 @@ export class RecordService {
     if (!/^[a-z][a-z0-9_]{0,39}$/.test(field)) throw badRequest(`Invalid field ${field}`);
     const expr = this.db.dialect === 'sqlite' ? `json_remove(data, '$.${field}')` : `data - '${field}'`;
     await this.db.run(`UPDATE records SET data = ${expr} WHERE object_api_name = ?`, [object]);
+    await this.db.run('DELETE FROM contact_points WHERE object_api_name = ? AND field = ?', [object, field]);
     await this.recalculateObject(object, { force: true });
   }
 

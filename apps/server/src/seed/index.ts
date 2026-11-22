@@ -3,7 +3,7 @@ import type { UserDTO } from '@titoforce/shared';
 import type { Services } from '../services.ts';
 import { nowIso } from '../util.ts';
 import { type DemoUserKey, type DemoUsers, seedDemoData } from './demo-data.ts';
-import { standardObjects } from './objects.ts';
+import { meetingFields, standardObjects } from './objects.ts';
 import { standardRoles } from './security.ts';
 import { seedConfiguration } from './setup.ts';
 
@@ -60,7 +60,10 @@ export async function demoLogins(s: Services): Promise<DemoLogin[]> {
  * (unless disabled) a fictional demo company. Does nothing when the database was already seeded.
  */
 export async function seedIfNeeded(s: Services, log: (msg: string) => void = () => {}): Promise<SeedResult> {
-  if (await getSetting(s, 'seeded_at')) return { seeded: false, demo: (await getSetting(s, 'demo')) === '1' };
+  if (await getSetting(s, 'seeded_at')) {
+    await upgradeStandardObjects(s);
+    return { seeded: false, demo: (await getSetting(s, 'demo')) === '1' };
+  }
   const existing = await s.db.get<{ n: number }>('SELECT (SELECT COUNT(*) FROM roles) + (SELECT COUNT(*) FROM objects) AS n');
   if (Number(existing?.n ?? 0) > 0) {
     throw new Error('The database was only partially initialized (a previous seed failed). Run `npm run db:reset` to start over.');
@@ -122,4 +125,14 @@ export async function seedIfNeeded(s: Services, log: (msg: string) => void = () 
   await setSetting(s, 'seeded_at', nowIso());
   log(`Database ready${demo ? ' (demo company loaded)' : ''}.`);
   return { seeded: true, demo, generatedAdmin };
+}
+
+/** Adds standard fields introduced after a database was seeded. Fields an administrator already created with the same name are left alone. */
+export async function upgradeStandardObjects(s: Services): Promise<void> {
+  const activity = s.metadata.get('activity');
+  if (!activity) return;
+  const missing = meetingFields().filter((f) => !activity.fields.some((x) => x.apiName === f.apiName));
+  if (!missing.length) return;
+  const fields = [...activity.fields, ...missing.map((f, i) => ({ ...f, isCustom: false, sortOrder: activity.fields.length + i }))];
+  await s.metadata.saveObject({ ...activity, fields });
 }

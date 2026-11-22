@@ -134,10 +134,11 @@ export function platformRoutes(app: FastifyInstance, s: Services): void {
 
   // ---------- users & roles ----------
 
-  // Everyone can see the user directory (owner pickers, @-assignments).
+  // Everyone can see the user directory (owner pickers, @-assignments). Personal phone numbers are only shown to administrators.
   app.get('/api/users', async (req) => {
-    principalOf(req);
-    return s.users.listUsers(true);
+    const a = auth(req);
+    const users = await s.users.listUsers(true);
+    return a.permissions.setup ? users : users.map((u) => (u.id === a.user.id ? u : { ...u, phone: undefined }));
   });
 
   app.post('/api/users', async (req, reply) => {
