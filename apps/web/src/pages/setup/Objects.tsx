@@ -7,7 +7,8 @@ import { api } from '../../api.ts';
 import { useToast } from '../../components/feedback.tsx';
 import { ColorPicker, IconPicker } from '../../components/pickers.tsx';
 import { Badge, Button, EmptyState, ErrorBanner, FormField, Loading, Modal, ObjectTile, PageHeader } from '../../components/ui.tsx';
-import { invalidateMetadata, useObjects } from '../../lib/hooks.ts';
+import { t } from '../../i18n/index.ts';
+import { invalidateMetadata, useSetupObjects } from '../../lib/hooks.ts';
 
 function NewObjectForm({ existing, onClose }: { existing: ObjectDef[]; onClose: () => void }) {
   const qc = useQueryClient();
@@ -27,9 +28,9 @@ function NewObjectForm({ existing, onClose }: { existing: ObjectDef[]; onClose: 
   const apiError = !effectiveApi
     ? null
     : !API_NAME_RE.test(effectiveApi)
-      ? 'Use lowercase letters, numbers and underscores, starting with a letter (max 40).'
+      ? t('setupObjects.apiNameInvalid')
       : existing.some((o) => o.apiName === effectiveApi)
-        ? 'An object with this API name already exists.'
+        ? t('setupObjects.newObject.alreadyExists')
         : null;
 
   const create = useMutation({
@@ -43,8 +44,8 @@ function NewObjectForm({ existing, onClose }: { existing: ObjectDef[]; onClose: 
         color,
       }),
     onSuccess: async (def) => {
-      qc.setQueryData<ObjectDef[]>(['objects'], (old) => (old ? [...old.filter((o) => o.apiName !== def.apiName), def] : old));
-      toast.success(`${def.label} created`);
+      qc.setQueryData<ObjectDef[]>(['objects', 'raw'], (old) => (old ? [...old.filter((o) => o.apiName !== def.apiName), def] : old));
+      toast.success(t('setupObjects.newObject.created', { label: def.label }));
       onClose();
       navigate(`/setup/objects/${def.apiName}`);
       await invalidateMetadata(qc);
@@ -57,13 +58,13 @@ function NewObjectForm({ existing, onClose }: { existing: ObjectDef[]; onClose: 
     <Modal
       open
       onClose={onClose}
-      title="New object"
+      title={t('setupObjects.newObject.title')}
       size="lg"
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" type="submit" form={formId} disabled={!canSave} loading={create.isPending}>
-            Create object
+            {t('setupObjects.newObject.create')}
           </Button>
         </>
       }
@@ -78,14 +79,14 @@ function NewObjectForm({ existing, onClose }: { existing: ObjectDef[]; onClose: 
       >
         <ErrorBanner error={create.error} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField label="Label" required htmlFor={ids.label} help="Singular, e.g. “Vehicle”.">
+          <FormField label={t('common.label')} required htmlFor={ids.label} help={t('setupObjects.newObject.labelHelp')}>
             <input id={ids.label} className="input" value={label} maxLength={60} onChange={(e) => setLabel(e.target.value)} />
           </FormField>
-          <FormField label="Plural label" htmlFor={ids.plural} help={label.trim() ? `Defaults to “${label.trim()}s”.` : undefined}>
+          <FormField label={t('setupObjects.pluralLabel')} htmlFor={ids.plural} help={label.trim() ? t('setupObjects.newObject.pluralHelp', { plural: `${label.trim()}s` }) : undefined}>
             <input id={ids.plural} className="input" value={plural} maxLength={60} placeholder={label.trim() ? `${label.trim()}s` : ''} onChange={(e) => setPlural(e.target.value)} />
           </FormField>
         </div>
-        <FormField label="API name" required htmlFor={ids.api} error={apiError} help="Used by the API, formulas and templates. It cannot be changed later.">
+        <FormField label={t('common.apiName')} required htmlFor={ids.api} error={apiError} help={t('setupObjects.newObject.apiNameHelp')}>
           <input
             id={ids.api}
             className="input font-mono"
@@ -97,23 +98,24 @@ function NewObjectForm({ existing, onClose }: { existing: ObjectDef[]; onClose: 
             }}
           />
         </FormField>
-        <FormField label="Description" htmlFor={ids.desc}>
+        <FormField label={t('common.description')} htmlFor={ids.desc}>
           <textarea id={ids.desc} className="input" rows={2} maxLength={500} value={description} onChange={(e) => setDescription(e.target.value)} />
         </FormField>
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField label="Icon" htmlFor={ids.icon}>
+          <FormField label={t('common.icon')} htmlFor={ids.icon}>
             <IconPicker id={ids.icon} value={icon} onChange={setIcon} />
           </FormField>
           <div>
-            <span className="label">Color</span>
+            <span className="label">{t('common.color')}</span>
             <ColorPicker value={color} onChange={setColor} />
           </div>
         </div>
         <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
           <ObjectTile icon={icon} color={color} />
           <div className="min-w-0 text-sm">
-            <div className="font-medium text-slate-900">{plural.trim() || (label.trim() ? `${label.trim()}s` : 'Preview')}</div>
-            <div className="text-xs text-slate-500">A “{label.trim() || 'Name'} Name” text field is created automatically.</div>
+            <div className="font-medium text-slate-900">{plural.trim() || (label.trim() ? `${label.trim()}s` : t('setupObjects.newObject.preview'))}</div>
+            {/* Mirrors the server, which names the record name field “<label> Name”. */}
+            <div className="text-xs text-slate-500">{t('setupObjects.newObject.nameFieldHint', { field: `${label.trim() || t('common.name')} Name` })}</div>
           </div>
         </div>
       </form>
@@ -122,7 +124,7 @@ function NewObjectForm({ existing, onClose }: { existing: ObjectDef[]; onClose: 
 }
 
 export default function Objects() {
-  const objects = useObjects();
+  const objects = useSetupObjects();
   const [q, setQ] = useState('');
   const [creating, setCreating] = useState(false);
   const term = q.trim().toLowerCase();
@@ -133,11 +135,11 @@ export default function Objects() {
   return (
     <div className="mx-auto max-w-6xl p-6">
       <PageHeader
-        title="Objects & Fields"
-        subtitle="Standard and custom objects, their fields, page layouts and validation rules."
+        title={t('setupObjects.list.title')}
+        subtitle={t('setupObjects.list.subtitle')}
         actions={
           <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
-            New object
+            {t('setupObjects.list.newObject')}
           </Button>
         }
       />
@@ -145,7 +147,7 @@ export default function Objects() {
         <div className="border-b border-slate-100 p-3">
           <div className="relative max-w-sm">
             <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-slate-400" aria-hidden />
-            <input type="search" aria-label="Search objects" placeholder="Search objects…" className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input type="search" aria-label={t('setupObjects.list.searchLabel')} placeholder={t('setupObjects.list.searchPlaceholder')} className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
         </div>
         {objects.isLoading ? (
@@ -155,17 +157,17 @@ export default function Objects() {
             <ErrorBanner error={objects.error} />
           </div>
         ) : list.length === 0 ? (
-          <EmptyState icon={Database} title={term ? 'No objects match your search' : 'No objects yet'} />
+          <EmptyState icon={Database} title={term ? t('setupObjects.list.noMatches') : t('setupObjects.list.empty')} />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50/70 text-left text-xs font-semibold text-slate-500 uppercase">
                 <tr>
-                  <th className="px-4 py-2.5">Object</th>
-                  <th className="px-4 py-2.5">API name</th>
-                  <th className="px-4 py-2.5">Type</th>
-                  <th className="px-4 py-2.5 text-right">Fields</th>
-                  <th className="px-4 py-2.5">Description</th>
+                  <th className="px-4 py-2.5">{t('common.object')}</th>
+                  <th className="px-4 py-2.5">{t('common.apiName')}</th>
+                  <th className="px-4 py-2.5">{t('common.type')}</th>
+                  <th className="px-4 py-2.5 text-right">{t('setupObjects.list.fields')}</th>
+                  <th className="px-4 py-2.5">{t('common.description')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -178,7 +180,7 @@ export default function Objects() {
                       </Link>
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs text-slate-600">{o.apiName}</td>
-                    <td className="px-4 py-2.5">{o.isCustom ? <Badge color="purple">Custom</Badge> : <Badge color="gray">Standard</Badge>}</td>
+                    <td className="px-4 py-2.5">{o.isCustom ? <Badge color="purple">{t('setupObjects.custom')}</Badge> : <Badge color="gray">{t('setupObjects.standard')}</Badge>}</td>
                     <td className="px-4 py-2.5 text-right text-slate-600 tabular-nums">{o.fields.length}</td>
                     <td className="max-w-md truncate px-4 py-2.5 text-slate-500" title={o.description}>
                       {o.description}

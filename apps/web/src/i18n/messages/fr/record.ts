@@ -1,0 +1,156 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  noName: '(sans nom)',
+  system: 'Système',
+
+  notAvailable: {
+    title: 'Enregistrement indisponible',
+    body: 'Il a peut-être été supprimé, ou vous n’y avez peut-être pas accès.',
+    goHome: 'Retour à l’accueil',
+    objectUnavailable: 'L’objet de cet enregistrement ne vous est pas accessible.',
+  },
+
+  page: {
+    askAi: 'Demander à l’IA',
+    summarizeWithAi: 'Résumer avec l’IA',
+    summarizePrompt: 'Summarize this {label} and suggest next steps.',
+    showRelated: 'Afficher les enregistrements associés',
+    deleteTitle: 'Supprimer l’enregistrement de type {label} ?',
+    deleteMessage:
+      'L’enregistrement « {name} » sera définitivement supprimé. Les enregistrements qui y font référence peuvent également être supprimés, ou leur référence effacée.',
+    deleted: 'Enregistrement supprimé : {label} « {name} »',
+    related: 'Associé',
+    relatedCount: 'Associé ({count})',
+    sidebarLabel: 'Activité et approbations',
+  },
+
+  details: {
+    defaultSection: 'Informations : {label}',
+    systemInformation: 'Informations système',
+    lastModified: 'Dernière modification',
+    stamp: '{user}, {time}',
+    editField: 'Modifier le champ {field}',
+    changeOwner: 'Modifier le propriétaire',
+    ownerChanged: 'Propriétaire modifié',
+  },
+
+  path: {
+    set: 'Champ {field} défini sur {value}',
+    markAs: 'Définir le champ {field} sur {value}',
+  },
+
+  activity: {
+    title: 'Activité',
+    formLabel: 'Consigner une activité',
+    typeLabel: 'Type d’activité',
+    subject: 'Objet',
+    subjectPlaceholder: 'Objet ({type})',
+    notes: 'Notes',
+    detailsPlaceholder: 'Détails (facultatif)',
+    whatHappenedPlaceholder: 'Que s’est-il passé ? (facultatif)',
+    dueLabel: 'Échéance',
+    add: 'Ajouter : {type}',
+    log: 'Consigner : {type}',
+    scheduled: 'Activité planifiée : {type}',
+    logged: 'Activité consignée : {type}',
+    markComplete: 'Marquer « {title} » comme terminée',
+    reopen: 'Rouvrir « {title} »',
+    someone: 'Quelqu’un',
+    dueOn: 'Échéance : {date}',
+    overdueDueOn: 'En retard, échéance : {date}',
+    filterLabel: 'Afficher',
+    filter: {
+      activities: 'Activités',
+      changes: 'Modifications',
+      ai: 'IA',
+    },
+    empty: 'Rien pour le moment.',
+    upcomingLabel: 'À venir et en retard',
+    upcoming: 'À venir et en retard',
+    history: 'Historique',
+  },
+
+  history: {
+    updatedFields: { one: '{actor} a mis à jour {count} champ', other: '{actor} a mis à jour {count} champs' },
+    createdRecord: '{actor} a créé cet enregistrement',
+    other: '{actor} : {action}',
+    more: { one: '… et {count} autre', other: '… et {count} autres' },
+    actorType: {
+      agent: 'agent',
+      automation: 'automatisation',
+      system: 'système',
+      approval: 'approbation',
+    },
+  },
+
+  agentRun: {
+    status: {
+      running: 'en cours',
+      failed: 'échec',
+    },
+  },
+
+  approvals: {
+    title: 'Approbations',
+    submit: 'Soumettre pour approbation',
+    submitted: 'Soumis à {name} pour approbation',
+    processLabel: 'Processus d’approbation',
+    automaticProcess: 'Automatique (premier processus dont les critères correspondent)',
+    process: 'Processus : {name}',
+    comment: 'Commentaire',
+    submitCommentHelp: 'Facultatif. L’approbateur le verra avec la demande.',
+    decisionCommentHelp: 'Facultatif. Partagé avec le demandeur.',
+    quote: '« {comment} »',
+    approveTitle: 'Approuver la demande',
+    rejectTitle: 'Refuser la demande',
+    approve: 'Approuver',
+    reject: 'Refuser',
+    recall: 'Rappeler',
+    approvedRecord: 'Demande approuvée : « {name} »',
+    rejectedRecord: 'Demande refusée : « {name} »',
+    recalledToast: 'Demande rappelée',
+    submittedBy: 'Soumis par {name}, {time}',
+    pendingLabel: 'En attente d’approbation',
+    waitingOnYou: 'En attente de votre réponse',
+    waitingOn: 'En attente : {name}',
+    recalled: 'Rappelée',
+    notSubmitted: 'Pas encore soumis.',
+    status: {
+      pending: 'en attente',
+      approved: 'approuvée',
+      rejected: 'refusée',
+      recalled: 'rappelée',
+    },
+  },
+
+  convert: {
+    action: 'Convertir',
+    title: 'Convertir la piste : {name}',
+    intro:
+      'La conversion crée un contact, le rattache à un compte et, si vous le souhaitez, ouvre une opportunité. La piste est ensuite marquée comme convertie.',
+    account: 'Compte',
+    useNamedAccount: 'Utiliser le compte nommé « {name} » s’il existe, sinon le créer',
+    createAccount: 'Créer un compte à partir du nom de la piste',
+    attachExisting: 'Rattacher à un compte existant',
+    searchAccounts: 'Rechercher des comptes…',
+    createOpportunity: 'Créer une opportunité',
+    opportunityName: 'Nom de l’opportunité',
+    opportunityNameHelp: 'Laissez vide pour utiliser « <Compte> - New Business ».',
+    converted: 'Piste convertie : {name}',
+    doneTitle: 'Piste convertie',
+    resultsLabel: 'Enregistrements convertis',
+    accountNew: 'Compte (nouveau)',
+    accountExisting: 'Compte (existant)',
+    contactNew: 'Contact (nouveau)',
+    opportunityNew: 'Opportunité (nouvelle)',
+  },
+
+  related: {
+    newLabel: 'Créer : {label}',
+    empty: 'La liste des {plural} est vide pour le moment.',
+    viewAll: 'Tout afficher ({count})',
+    noListsTitle: 'Aucune liste associée',
+    noListsBody: 'Aucun autre élément de titoForce ne fait encore référence à cet enregistrement de type {label}.',
+  },
+} satisfies Translation['record'];

@@ -11,7 +11,18 @@ export interface AiConfig {
 export interface Config {
   port: number;
   host: string;
+  /** Database of the default organization; it also lists the other organizations, whose databases sit next to it. */
   databaseUrl: string;
+  /** Name given to the default organization when the control plane is first created. */
+  defaultOrgName: string;
+  /** Route requests by subdomain (`acme.<baseDomain>` → organization "acme"); null disables host routing. */
+  baseDomain: string | null;
+  /** Lets anyone create a new organization from the sign-in page. */
+  allowSignup: boolean;
+  /** Connection pool size for each additional organization database on PostgreSQL. */
+  tenantPoolSize: number;
+  /** Extra origins (e.g. the mobile app's) allowed to call the API with bearer tokens. */
+  corsOrigins: string[];
   seedDemo: boolean;
   adminEmail: string | null;
   adminPassword: string | null;
@@ -57,6 +68,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: Number(env.TITO_PORT ?? env.PORT ?? 3000),
     host: env.TITO_HOST ?? '127.0.0.1',
     databaseUrl: env.TITO_DATABASE_URL ?? env.DATABASE_URL ?? `sqlite:${resolve(import.meta.dirname, '../../../data/titoforce.db')}`,
+    defaultOrgName: env.TITO_ORG_NAME?.trim() || 'Default organization',
+    baseDomain: env.TITO_BASE_DOMAIN?.trim().toLowerCase().replace(/^\.+|\.+$/g, '') || null,
+    allowSignup: env.TITO_ALLOW_SIGNUP === 'true',
+    tenantPoolSize: Math.max(1, Number(env.TITO_TENANT_POOL_SIZE ?? 3) || 3),
+    corsOrigins: (env.TITO_CORS_ORIGINS ?? '')
+      .split(',')
+      .map((o) => o.trim().replace(/\/+$/, ''))
+      .filter(Boolean),
     // Demo data (with well-known passwords) is on by default for local evaluation, but never implicitly in production.
     seedDemo: env.TITO_SEED_DEMO ? env.TITO_SEED_DEMO !== 'false' : env.NODE_ENV !== 'production',
     adminEmail: env.TITO_ADMIN_EMAIL ?? null,

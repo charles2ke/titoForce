@@ -55,17 +55,27 @@ export async function demoLogins(s: Services): Promise<DemoLogin[]> {
   }
 }
 
+/** Overrides of the TITO_SEED_DEMO / TITO_ADMIN_* settings (used when creating additional organizations). */
+export interface SeedOptions {
+  demo?: boolean;
+  adminEmail?: string;
+  adminPassword?: string;
+  adminName?: string;
+  /** Demo users share the documented demo password (default); false gives them random passwords instead. */
+  sampleLogins?: boolean;
+}
+
 /**
  * Initializes an empty database: standard objects, roles, users, out-of-the-box configuration and
  * (unless disabled) a fictional demo company. Does nothing when the database was already seeded.
  */
-export async function seedIfNeeded(s: Services, log: (msg: string) => void = () => {}): Promise<SeedResult> {
+export async function seedIfNeeded(s: Services, log: (msg: string) => void = () => {}, opts: SeedOptions = {}): Promise<SeedResult> {
   if (await getSetting(s, 'seeded_at')) return { seeded: false, demo: (await getSetting(s, 'demo')) === '1' };
   const existing = await s.db.get<{ n: number }>('SELECT (SELECT COUNT(*) FROM roles) + (SELECT COUNT(*) FROM objects) AS n');
   if (Number(existing?.n ?? 0) > 0) {
     throw new Error('The database was only partially initialized (a previous seed failed). Run `npm run db:reset` to start over.');
   }
-  const demo = s.config.seedDemo;
+  const demo = opts.demo ?? s.config.seedDemo;
   log(demo ? 'Initializing database with the demo company…' : 'Initializing an empty database…');
 
   const objects = standardObjects();
@@ -74,8 +84,8 @@ export async function seedIfNeeded(s: Services, log: (msg: string) => void = () 
   for (const role of standardRoles()) await s.users.upsertRole(role);
 
   let generatedAdmin: SeedResult['generatedAdmin'];
-  const adminEmail = s.config.adminEmail ?? `admin@${DEMO_DOMAIN}`;
-  let adminPassword = s.config.adminPassword ?? (demo ? DEMO_PASSWORD : null);
+  const adminEmail = opts.adminEmail ?? s.config.adminEmail ?? `admin@${DEMO_DOMAIN}`;
+  let adminPassword = opts.adminPassword ?? s.config.adminPassword ?? (demo ? DEMO_PASSWORD : null);
   if (!adminPassword) {
     adminPassword = randomBytes(12).toString('base64url');
     generatedAdmin = { email: adminEmail, password: adminPassword };
@@ -86,17 +96,17 @@ export async function seedIfNeeded(s: Services, log: (msg: string) => void = () 
     if (!demo && u.key !== 'admin') continue;
     const isAdmin = u.key === 'admin';
     const email = isAdmin ? adminEmail : `${u.key}@${DEMO_DOMAIN}`;
-    const password = isAdmin ? adminPassword : DEMO_PASSWORD;
+    const password = isAdmin ? adminPassword : opts.sampleLogins === false ? randomBytes(18).toString('base64url') : DEMO_PASSWORD;
     const created: UserDTO = await s.users.createUser({
       email,
-      name: isAdmin && !demo ? 'Administrator' : u.name,
+      name: isAdmin && opts.adminName ? opts.adminName : isAdmin && !demo ? 'Administrator' : u.name,
       title: u.title,
       roleId: u.roleId,
       password,
       avatarColor: u.color,
     });
     users[u.key] = created;
-    if (demo && password === DEMO_PASSWORD) logins.push({ email: created.email, name: created.name, title: u.title, roleId: u.roleId });
+    if (demo && opts.sampleLogins !== false && password === DEMO_PASSWORD) logins.push({ email: created.email, name: created.name, title: u.title, roleId: u.roleId });
   }
   await s.users.createUser({ email: `ai@${DEMO_DOMAIN}`, name: 'titoForce AI', title: 'Digital worker', roleId: 'ai_agent', isAgent: true, avatarColor: 'indigo' });
 

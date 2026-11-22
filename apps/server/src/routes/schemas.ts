@@ -1,4 +1,4 @@
-import { FIELD_TYPES, FILTER_OPERATORS, PALETTE } from '@titoforce/shared';
+import { FIELD_TYPES, FILTER_OPERATORS, PALETTE, SUPPORTED_LOCALES } from '@titoforce/shared';
 import { z } from 'zod';
 
 // Request-shape validation. Services perform the semantic validation (known fields, permissions, …).
@@ -24,9 +24,39 @@ export const recordQuery = z.object({
 export const recordWrite = z.object({
   fields: z.record(z.string(), z.unknown()),
   allowDuplicates: z.boolean().optional(),
+  /** Updates only: the `updatedAt` the edit started from (see WriteOptions.expectedUpdatedAt). */
+  expectedUpdatedAt: z.string().max(40).optional(),
 });
 
-export const login = z.object({ email: z.string().min(1).max(254), password: z.string().min(1).max(200), issueToken: z.boolean().optional() });
+export const login = z.object({
+  email: z.string().min(1).max(254),
+  password: z.string().min(1).max(200),
+  /** Organization ID (slug); defaults to the organization the request is addressed to. */
+  organization: z.string().max(64).optional(),
+  issueToken: z.boolean().optional(),
+});
+export const signup = z.object({
+  organization: z.string().min(1).max(64),
+  organizationName: z.string().trim().min(1).max(80),
+  name: z.string().trim().min(1).max(80),
+  email: z.string().trim().min(3).max(254),
+  password: z.string().min(8).max(200),
+  demo: z.boolean().optional(),
+  issueToken: z.boolean().optional(),
+});
+export const userLocale = z.object({ locale: z.enum(SUPPORTED_LOCALES).nullable() });
+export const createSandbox = z.object({ name: z.string().min(1).max(20), type: z.enum(['developer', 'full']) });
+export const deploy = z.object({
+  components: z
+    .array(
+      z.object({
+        type: z.enum(['object', 'layout', 'translation', 'app', 'automation', 'approval_process', 'agent', 'report', 'dashboard', 'role']),
+        id: z.string().min(1).max(200),
+      }),
+    )
+    .min(1)
+    .max(1000),
+});
 export const changePassword = z.object({ current: z.string().min(1).max(200), next: z.string().min(8).max(200) });
 
 export const listView = z.object({
@@ -207,3 +237,22 @@ export const dashboard = z.object({
 export const convertLead = z.object({ createOpportunity: z.boolean().optional(), opportunityName: z.string().max(255).optional(), accountId: id.optional() });
 export const importCsv = z.object({ csv: z.string().min(1).max(5_000_000) });
 export const markRead = z.object({ ids: z.array(id).max(500).optional() });
+
+const layoutSection = z.object({
+  id: z.string().regex(/^[a-z0-9_]{1,40}$/),
+  title: z.string().max(80),
+  columns: z.union([z.literal(1), z.literal(2)]),
+  fields: z.array(apiName).max(500),
+});
+export const pageLayout = z.object({
+  name: z.string().trim().min(1).max(80),
+  isDefault: z.boolean().default(false),
+  highlights: z.array(apiName).max(6).default([]),
+  sections: z.array(layoutSection).min(1).max(30),
+  relatedLists: z.array(z.string().min(1).max(130)).max(100).default([]),
+  roleIds: z.array(id).max(100).default([]),
+});
+
+export const saveTranslations = z.object({
+  entries: z.array(z.object({ key: z.string().min(1).max(300), value: z.string().max(1000).nullable() })).min(1).max(5000),
+});

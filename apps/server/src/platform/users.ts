@@ -5,6 +5,15 @@ import { AppError, badRequest, conflict, newId, notFound, nowIso } from '../util
 import type { Principal } from './principal.ts';
 
 const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
+
+/** Checks a role's permissions against the organization's objects; the administrator role always keeps Setup access. */
+export function checkRole(objects: { get(apiName: string): unknown }, role: RoleDef): RoleDef {
+  for (const object of Object.keys(role.permissions.objects)) {
+    if (object !== '*' && !objects.get(object)) throw badRequest(`Unknown object ${object}`);
+  }
+  if (role.id === 'admin' && !role.permissions.setup) throw badRequest('The administrator role always has Setup access');
+  return role;
+}
 const AVATAR_COLORS = ['blue', 'green', 'purple', 'orange', 'pink', 'teal', 'indigo', 'red'];
 
 function scryptAsync(password: string, salt: Buffer): Promise<Buffer> {
@@ -30,6 +39,12 @@ export async function verifyPassword(password: string, stored: string | null): P
 
 const hashToken = (token: string): string => createHash('sha256').update(token).digest('hex');
 
+/** Organization a session token belongs to: tokens are "<organization id>.<secret>" (older tokens have no prefix). */
+export function tokenTenant(token: string): string {
+  const dot = token.indexOf('.');
+  return dot > 0 ? token.slice(0, dot) : 'default';
+}
+
 interface UserRow {
   id: string;
   email: string;
@@ -42,11 +57,12 @@ interface UserRow {
   active: number;
   is_agent: number;
   avatar_color: string;
+  locale: string | null;
   created_at: string;
 }
 
 const USER_SELECT = `SELECT u.id, u.email, u.name, u.title, u.password_hash, u.role_id, r.name AS role_name, r.permissions,
-  u.active, u.is_agent, u.avatar_color, u.created_at FROM users u JOIN roles r ON r.id = u.role_id`;
+  u.active, u.is_agent, u.avatar_color, u.locale, u.created_at FROM users u JOIN roles r ON r.id = u.role_id`;
 
 function toUser(row: UserRow): UserDTO {
   return {
@@ -59,6 +75,7 @@ function toUser(row: UserRow): UserDTO {
     active: !!Number(row.active),
     isAgent: !!Number(row.is_agent),
     avatarColor: row.avatar_color,
+    locale: row.locale ?? null,
     createdAt: row.created_at,
   };
 }
@@ -75,9 +92,11 @@ export interface CreateUserInput {
 
 export class UserService {
   private db: Db;
+  private tenantId: string;
 
-  constructor(db: Db) {
+  constructor(db: Db, tenantId = 'default') {
     this.db = db;
+    this.tenantId = tenantId;
   }
 
   async listRoles(): Promise<RoleDef[]> {
@@ -161,7 +180,7 @@ export class UserService {
     const row = await this.db.get<UserRow>(`${USER_SELECT} WHERE u.email = ?`, [email.trim().toLowerCase()]);
     const ok = row ? await verifyPassword(password, row.password_hash) : await verifyPassword(password, 'scrypt$AAAA$AAAA');
     if (!row || !ok || !Number(row.active) || Number(row.is_agent)) throw new AppError(401, 'invalid_credentials', 'Invalid email or password');
-    const token = randomBytes(32).toString('base64url');
+    const token = `${this.tenantId}.${randomBytes(32).toString('base64url')}`;
     const now = new Date();
     await this.db.run('DELETE FROM sessions WHERE expires_at < ?', [now.toISOString()]);
     await this.db.run('INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)', [
@@ -186,7 +205,8 @@ export class UserService {
     await this.db.run('DELETE FROM sessions WHERE user_id = ? AND id <> ?', [userId, keepToken ? hashToken(keepToken) : '-']);
   }
 
-  async resolveSession(token: string): Promise<(SessionInfo & { principal: Principal }) | null> {
+  async resolveSession(token: string): Promise<(Omit<SessionInfo, 'organization'> & { principal: Principal }) | null> {
+    if (tokenTenant(token) !== this.tenantId) return null;
     const row = await this.db.get<UserRow & { expires_at: string }>(
       `${USER_SELECT} JOIN sessions s ON s.user_id = u.id WHERE s.id = ? AND s.expires_at > ? AND u.active = 1`,
       [hashToken(token), nowIso()],
@@ -195,6 +215,14 @@ export class UserService {
     const user = toUser(row);
     const permissions = parseJson<RolePermissions>(row.permissions, { setup: false, viewSensitive: false, manageAutomations: false, manageAgents: false, objects: {} });
     return { user, permissions, principal: { type: 'user', userId: user.id, name: user.name, permissions } };
+  }
+
+  /** Preferred UI language; null follows the browser. */
+  async setLocale(userId: string, locale: string | null): Promise<UserDTO> {
+    await this.db.run('UPDATE users SET locale = ? WHERE id = ?', [locale, userId]);
+    const user = await this.getUser(userId);
+    if (!user) throw notFound('User not found');
+    return user;
   }
 
   async principalForUser(userId: string, type: Principal['type'] = 'user', nameOverride?: string): Promise<Principal> {

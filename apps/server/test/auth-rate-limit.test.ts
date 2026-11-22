@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { authRoutes } from '../src/routes/auth.ts';
 import type { Services } from '../src/services.ts';
+import { Platform } from '../src/tenancy/platform.ts';
 import { AppError } from '../src/util.ts';
 
 function deferred<T>() {
@@ -43,17 +44,20 @@ async function setup() {
       resolveSession: async () => session,
     },
   } as unknown as Services;
+  const platform = Platform.single(services);
   const app = Fastify();
   await app.register(cookie);
   app.decorateRequest('auth', null);
+  app.decorateRequest('tenant', null);
   app.addHook('onRequest', async (req) => {
+    req.tenant = platform.defaultTenant();
     if (req.url === '/api/auth/password') req.auth = { ...session, token: 'token' } as typeof req.auth;
   });
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof AppError) return reply.code(err.status).send({ error: { code: err.code } });
     return reply.code(500).send({ error: { code: 'internal_error' } });
   });
-  authRoutes(app, services);
+  authRoutes(app, services, platform);
   const signIn = (email = 'user@example.com') => app.inject({
     method: 'POST', url: '/api/auth/login', payload: { email, password: 'password' },
   }).then((res) => res);

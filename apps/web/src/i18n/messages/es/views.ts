@@ -1,0 +1,66 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  noName: '(sin nombre)',
+  today: 'Hoy',
+
+  table: {
+    selectAll: 'Seleccionar todo en esta página',
+    selectRecord: 'Seleccionar {name}',
+    rowActions: 'Acciones de {name}',
+    selected: { one: '{count} seleccionado', other: '{count} seleccionados' },
+    updateField: 'Actualizar campo',
+    clearSelection: 'Borrar selección',
+    emptyTitle: 'No se han encontrado {plural}',
+    emptyFiltered: 'Pruebe con otra búsqueda o quite filtros.',
+    emptyCreate: 'Para empezar, cree un registro de {label}.',
+    deleteTitle: '¿Eliminar {label}?',
+    deleteMessage: '“{name}” se eliminará de forma permanente.',
+    deleted: 'Se ha eliminado “{name}”',
+    bulkDeleteTitle: { one: '¿Eliminar {count} registro?', other: '¿Eliminar {count} registros?' },
+    bulkDeleteMessage: 'Esta acción no se puede deshacer. Se omitirán los registros que no tenga permiso para eliminar.',
+    bulkDeleted: { one: 'Se ha eliminado {count} registro', other: 'Se han eliminado {count} registros' },
+    bulkDeletePartial: 'Registros eliminados: {done}; no eliminados: {failed}. {error}',
+    bulkUpdateTitle: { one: 'Actualizar {count} {singular}', other: 'Actualizar {count} {plural}' },
+    update: 'Actualizar',
+    newValue: 'Nuevo valor',
+    newValueHelp: 'Déjelo en blanco para borrar el campo.',
+    bulkUpdated: { one: 'Se ha actualizado {count} registro', other: 'Se han actualizado {count} registros' },
+    bulkUpdatePartial: 'Registros actualizados: {done}; con errores: {failed}. {error}',
+  },
+
+  kanban: {
+    needsPicklist: 'Los tableros Kanban necesitan una lista de selección para agrupar; “{field}” no lo es.',
+    noValue: 'Sin {field}',
+    truncated: 'Se muestran los primeros {shown} de {total} registros. Añada filtros para acotar el tablero.',
+    boardLabel: '{plural} por {field}',
+    move: 'Mover {name}',
+    dropHere: 'Suelte las tarjetas aquí',
+  },
+
+  calendar: {
+    needsDateField: 'Las vistas de calendario necesitan un campo de fecha; “{field}” no lo es.',
+    byField: 'por {field}',
+    previousMonth: 'Mes anterior',
+    nextMonth: 'Mes siguiente',
+    gridLabel: 'Calendario',
+    dayItems: { one: '{date}: {count} elemento', other: '{date}: {count} elementos' },
+    newOn: 'Crear {label} el {date}',
+    more: { one: '+{count} más', other: '+{count} más' },
+    truncated: 'Se muestran los primeros {shown} de {total} registros de este intervalo.',
+  },
+
+  timeline: {
+    notConfigured: 'El objeto {label} no tiene fechas de inicio y fin configuradas para el cronograma.',
+    start: 'Inicio',
+    end: 'Fin',
+    range: '{start} – {end}',
+    earlier: 'Anterior',
+    later: 'Siguiente',
+    emptyTitle: 'No hay {plural} en este período',
+    emptyBody: 'Use las flechas para ver otros meses.',
+    barTitle: '{name}: {start} – {end}',
+    barTitleNoEnd: '{name}: {start} – sin fecha de fin',
+    truncated: 'Se muestran los primeros {shown} de {total} registros de este período.',
+  },
+} satisfies Translation['views'];

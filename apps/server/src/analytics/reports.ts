@@ -161,7 +161,7 @@ export class AnalyticsService {
     return this.toReport(row);
   }
 
-  private validateReport(input: ReportInput): ReportInput {
+  validateReport(input: ReportInput): ReportInput {
     if (!input.name?.trim()) throw badRequest('Report name is required');
     if (!CHARTS.includes(input.chart)) throw badRequest('Invalid chart type');
     this.validateSpec(input.object, input);
@@ -228,7 +228,7 @@ export class AnalyticsService {
     return this.toDashboard(row);
   }
 
-  private async validateDashboard(input: DashboardInput): Promise<DashboardInput> {
+  async validateDashboard(input: DashboardInput): Promise<DashboardInput> {
     if (!input.name?.trim()) throw badRequest('Dashboard name is required');
     if (!Array.isArray(input.widgets) || input.widgets.length > 24) throw badRequest('Dashboards have up to 24 widgets');
     const ids = new Set((await this.listReports()).map((r) => r.id));

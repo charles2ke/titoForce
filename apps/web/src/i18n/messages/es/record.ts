@@ -1,0 +1,156 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  noName: '(sin nombre)',
+  system: 'Sistema',
+
+  notAvailable: {
+    title: 'Registro no disponible',
+    body: 'Es posible que se haya eliminado o que no tenga acceso a él.',
+    goHome: 'Ir al inicio',
+    objectUnavailable: 'El objeto de este registro no está disponible para usted.',
+  },
+
+  page: {
+    askAi: 'Preguntar a la IA',
+    summarizeWithAi: 'Resumir con IA',
+    summarizePrompt: 'Resumir este registro de {label} y sugerir los próximos pasos.',
+    showRelated: 'Mostrar registros relacionados',
+    deleteTitle: '¿Eliminar {label}?',
+    deleteMessage:
+      '“{name}” se eliminará de forma permanente. Los registros que hacen referencia a él también pueden eliminarse o quedarse sin la referencia.',
+    deleted: 'Registro eliminado: {label} “{name}”',
+    related: 'Relacionado',
+    relatedCount: 'Relacionado ({count})',
+    sidebarLabel: 'Actividad y aprobaciones',
+  },
+
+  details: {
+    defaultSection: 'Información de {label}',
+    systemInformation: 'Información del sistema',
+    lastModified: 'Última modificación',
+    stamp: '{user}, {time}',
+    editField: 'Editar {field}',
+    changeOwner: 'Cambiar propietario',
+    ownerChanged: 'Se ha cambiado el propietario',
+  },
+
+  path: {
+    set: 'Se ha cambiado {field} a {value}',
+    markAs: 'Marcar {field} como {value}',
+  },
+
+  activity: {
+    title: 'Actividad',
+    formLabel: 'Registrar actividad',
+    typeLabel: 'Tipo de actividad',
+    subject: 'Asunto',
+    subjectPlaceholder: 'Asunto ({type})',
+    notes: 'Notas',
+    detailsPlaceholder: 'Detalles (opcional)',
+    whatHappenedPlaceholder: '¿Qué ha ocurrido? (opcional)',
+    dueLabel: 'Vencimiento',
+    add: 'Añadir {type}',
+    log: 'Registrar {type}',
+    scheduled: 'Actividad programada: {type}',
+    logged: 'Actividad registrada: {type}',
+    markComplete: 'Completar “{title}”',
+    reopen: 'Reabrir “{title}”',
+    someone: 'Alguien',
+    dueOn: 'Vence el {date}',
+    overdueDueOn: 'Fuera de plazo: vencía el {date}',
+    filterLabel: 'Mostrar',
+    filter: {
+      activities: 'Actividades',
+      changes: 'Cambios',
+      ai: 'IA',
+    },
+    empty: 'Todavía no hay nada aquí.',
+    upcomingLabel: 'Próximas y vencidas',
+    upcoming: 'Próximas y vencidas',
+    history: 'Historial',
+  },
+
+  history: {
+    updatedFields: { one: '{actor} ha actualizado {count} campo', other: '{actor} ha actualizado {count} campos' },
+    createdRecord: '{actor} ha creado este registro',
+    other: '{actor} {action}',
+    more: { one: '…y {count} más', other: '…y {count} más' },
+    actorType: {
+      agent: 'agente',
+      automation: 'automatización',
+      system: 'sistema',
+      approval: 'aprobación',
+    },
+  },
+
+  agentRun: {
+    status: {
+      running: 'en ejecución',
+      failed: 'error',
+    },
+  },
+
+  approvals: {
+    title: 'Aprobaciones',
+    submit: 'Enviar para aprobación',
+    submitted: 'Se ha enviado a {name} para su aprobación',
+    processLabel: 'Proceso de aprobación',
+    automaticProcess: 'Automático (el primer proceso cuyos criterios se cumplan)',
+    process: 'Proceso: {name}',
+    comment: 'Comentario',
+    submitCommentHelp: 'Opcional. El aprobador lo verá junto con la solicitud.',
+    decisionCommentHelp: 'Opcional. Se comparte con el solicitante.',
+    quote: '“{comment}”',
+    approveTitle: 'Aprobar solicitud',
+    rejectTitle: 'Rechazar solicitud',
+    approve: 'Aprobar',
+    reject: 'Rechazar',
+    recall: 'Retirar',
+    approvedRecord: 'Se ha aprobado “{name}”',
+    rejectedRecord: 'Se ha rechazado “{name}”',
+    recalledToast: 'Solicitud retirada',
+    submittedBy: 'Enviada por {name} {time}',
+    pendingLabel: 'Aprobación pendiente',
+    waitingOnYou: 'Pendiente de usted',
+    waitingOn: 'Pendiente de {name}',
+    recalled: 'Retirada',
+    notSubmitted: 'Todavía no se ha enviado.',
+    status: {
+      pending: 'pendiente',
+      approved: 'aprobada',
+      rejected: 'rechazada',
+      recalled: 'retirada',
+    },
+  },
+
+  convert: {
+    action: 'Convertir',
+    title: 'Convertir prospecto: {name}',
+    intro:
+      'Al convertir, se crea un contacto, se vincula a una cuenta y, opcionalmente, se abre una oportunidad. Después, el prospecto se marca como Convertido.',
+    account: 'Cuenta',
+    useNamedAccount: 'Usar la cuenta “{name}” si existe; si no, crearla',
+    createAccount: 'Crear una cuenta a partir del nombre del prospecto',
+    attachExisting: 'Vincular a una cuenta existente',
+    searchAccounts: 'Buscar cuentas…',
+    createOpportunity: 'Crear una oportunidad',
+    opportunityName: 'Nombre de la oportunidad',
+    opportunityNameHelp: 'Déjelo en blanco para usar “<Account> - New Business”.',
+    converted: 'Se ha convertido {name}',
+    doneTitle: 'Prospecto convertido',
+    resultsLabel: 'Registros convertidos',
+    accountNew: 'Cuenta (nueva)',
+    accountExisting: 'Cuenta (existente)',
+    contactNew: 'Contacto (nuevo)',
+    opportunityNew: 'Oportunidad (nueva)',
+  },
+
+  related: {
+    newLabel: 'Crear {label}',
+    empty: 'Todavía no hay {plural}.',
+    viewAll: 'Ver todos ({count})',
+    noListsTitle: 'No hay listas relacionadas',
+    noListsBody: 'Ningún otro elemento de titoForce hace referencia todavía a este registro de {label}.',
+  },
+} satisfies Translation['record'];

@@ -4,7 +4,8 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Ellipsis, Pencil, Trash } from 'lucide
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { api, errorMessage } from '../../api.ts';
-import { fieldDef, isEditable, plural, valueOf } from '../../lib/format.ts';
+import { inSentence, t } from '../../i18n/index.ts';
+import { fieldDef, isEditable, valueOf } from '../../lib/format.ts';
 import { invalidateRecordData, usePermissions } from '../../lib/hooks.ts';
 import { useConfirm, useToast } from '../feedback.tsx';
 import { FieldInput } from '../FieldInput.tsx';
@@ -36,8 +37,8 @@ function BulkEditModal({ def, ids, open, onClose, onDone }: { def: ObjectDef; id
     mutationFn: () => api.post<BulkResult>(`/api/records/${def.apiName}/bulk`, { action: 'update', ids, fields: { [field]: value === '' ? null : value } }),
     onSuccess: async (res) => {
       await invalidateRecordData(qc);
-      if (res.errors.length) toast.error(`Updated ${res.done}; ${res.errors.length} failed: ${res.errors[0]!.message}`);
-      else toast.success(`Updated ${plural(res.done, 'record')}`);
+      if (res.errors.length) toast.error(t('views.table.bulkUpdatePartial', { done: res.done, failed: res.errors.length, error: res.errors[0]!.message }));
+      else toast.success(t('views.table.bulkUpdated', { count: res.done }));
       onDone();
       onClose();
     },
@@ -46,20 +47,20 @@ function BulkEditModal({ def, ids, open, onClose, onDone }: { def: ObjectDef; id
     <Modal
       open={open}
       onClose={onClose}
-      title={`Update ${plural(ids.length, def.label.toLowerCase(), def.pluralLabel.toLowerCase())}`}
+      title={t('views.table.bulkUpdateTitle', { count: ids.length, singular: inSentence(def.label), plural: inSentence(def.pluralLabel) })}
       size="sm"
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" loading={run.isPending} disabled={!f} onClick={() => run.mutate()}>
-            Update
+            {t('views.table.update')}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
         <ErrorBanner error={run.error} />
-        <FormField label="Field" htmlFor="bulk-field">
+        <FormField label={t('common.field')} htmlFor="bulk-field">
           <select
             id="bulk-field"
             className="input"
@@ -77,7 +78,7 @@ function BulkEditModal({ def, ids, open, onClose, onDone }: { def: ObjectDef; id
           </select>
         </FormField>
         {f && (
-          <FormField label="New value" htmlFor="bulk-value" help="Leave empty to clear the field.">
+          <FormField label={t('views.table.newValue')} htmlFor="bulk-value" help={t('views.table.newValueHelp')}>
             <FieldInput key={f.apiName} id="bulk-value" field={f} value={value} onChange={setValue} />
           </FormField>
         )}
@@ -96,11 +97,11 @@ export function RowMenu({ def, record, refs }: { def: ObjectDef; record: CrmReco
   const canDelete = perms.canDelete(def.apiName, record.ownerId);
   if (!canEdit && !canDelete) return null;
   const remove = async () => {
-    if (!(await confirm({ title: `Delete ${def.label.toLowerCase()}?`, message: `“${record.name}” will be permanently deleted.`, confirmLabel: 'Delete', danger: true }))) return;
+    if (!(await confirm({ title: t('views.table.deleteTitle', { label: inSentence(def.label) }), message: t('views.table.deleteMessage', { name: record.name }), confirmLabel: t('common.delete'), danger: true }))) return;
     try {
       await api.del(`/api/records/${def.apiName}/${record.id}`);
       await invalidateRecordData(qc);
-      toast.success(`Deleted “${record.name}”`);
+      toast.success(t('views.table.deleted', { name: record.name }));
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -111,7 +112,7 @@ export function RowMenu({ def, record, refs }: { def: ObjectDef; record: CrmReco
         align="right"
         className="w-40"
         trigger={({ toggle, open }) => (
-          <button type="button" onClick={toggle} aria-expanded={open} aria-label={`Actions for ${record.name}`} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+          <button type="button" onClick={toggle} aria-expanded={open} aria-label={t('views.table.rowActions', { name: record.name })} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <Ellipsis className="size-4" />
           </button>
         )}
@@ -126,7 +127,7 @@ export function RowMenu({ def, record, refs }: { def: ObjectDef; record: CrmReco
                   setEditing(true);
                 }}
               >
-                Edit
+                {t('common.edit')}
               </MenuItem>
             )}
             {canDelete && (
@@ -138,7 +139,7 @@ export function RowMenu({ def, record, refs }: { def: ObjectDef; record: CrmReco
                   void remove();
                 }}
               >
-                Delete
+                {t('common.delete')}
               </MenuItem>
             )}
           </div>
@@ -187,8 +188,8 @@ export function TableView({
     onSuccess: async (res) => {
       await invalidateRecordData(qc);
       setSelected(new Set());
-      if (res.errors.length) toast.error(`Deleted ${res.done}; ${res.errors.length} could not be deleted: ${res.errors[0]!.message}`);
-      else toast.success(`Deleted ${plural(res.done, 'record')}`);
+      if (res.errors.length) toast.error(t('views.table.bulkDeletePartial', { done: res.done, failed: res.errors.length, error: res.errors[0]!.message }));
+      else toast.success(t('views.table.bulkDeleted', { count: res.done }));
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
@@ -216,9 +217,9 @@ export function TableView({
     <div className={cx('flex min-h-0 flex-col transition-opacity', query.isPlaceholderData && 'opacity-70')}>
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 border-b border-indigo-100 bg-indigo-50 px-4 py-2 text-sm">
-          <span className="font-medium text-indigo-900">{selected.size} selected</span>
+          <span className="font-medium text-indigo-900">{t('views.table.selected', { count: selected.size })}</span>
           <Button size="sm" icon={Pencil} onClick={() => setBulkOpen(true)}>
-            Update field
+            {t('views.table.updateField')}
           </Button>
           <Button
             size="sm"
@@ -226,20 +227,20 @@ export function TableView({
             icon={Trash}
             loading={bulkDelete.isPending}
             onClick={async () => {
-              if (await confirm({ title: `Delete ${plural(ids.length, 'record')}?`, message: 'This cannot be undone. Records you are not allowed to delete are skipped.', confirmLabel: 'Delete', danger: true })) bulkDelete.mutate(ids);
+              if (await confirm({ title: t('views.table.bulkDeleteTitle', { count: ids.length }), message: t('views.table.bulkDeleteMessage'), confirmLabel: t('common.delete'), danger: true })) bulkDelete.mutate(ids);
             }}
           >
-            Delete
+            {t('common.delete')}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-            Clear selection
+            {t('views.table.clearSelection')}
           </Button>
         </div>
       )}
       {records.length === 0 ? (
         <div className="p-6">
-          <EmptyState title={`No ${def.pluralLabel.toLowerCase()} found`} action={emptyAction}>
-            {base.q || base.filters ? 'Try a different search or remove filters.' : `Create your first ${def.label.toLowerCase()} to get started.`}
+          <EmptyState title={t('views.table.emptyTitle', { plural: inSentence(def.pluralLabel) })} action={emptyAction}>
+            {base.q || base.filters ? t('views.table.emptyFiltered') : t('views.table.emptyCreate', { label: inSentence(def.label) })}
           </EmptyState>
         </div>
       ) : (
@@ -248,7 +249,7 @@ export function TableView({
             <thead className="sticky top-0 z-10 bg-slate-50">
               <tr className="border-b border-slate-200 text-left">
                 <th className="w-10 px-4 py-2">
-                  <input type="checkbox" aria-label="Select all on this page" className="size-4 rounded border-slate-300 text-indigo-600" checked={allOnPage} onChange={toggleAll} />
+                  <input type="checkbox" aria-label={t('views.table.selectAll')} className="size-4 rounded border-slate-300 text-indigo-600" checked={allOnPage} onChange={toggleAll} />
                 </th>
                 {cols.map((f) => {
                   const dir = base.sort?.field === f.apiName ? base.sort.dir : null;
@@ -266,7 +267,7 @@ export function TableView({
                   );
                 })}
                 <th className="w-10">
-                  <span className="sr-only">Actions</span>
+                  <span className="sr-only">{t('common.actions')}</span>
                 </th>
               </tr>
             </thead>
@@ -274,13 +275,13 @@ export function TableView({
               {records.map((r) => (
                 <tr key={r.id} className={cx('hover:bg-slate-50/80', selected.has(r.id) && 'bg-indigo-50/40')}>
                   <td className="px-4 py-2">
-                    <input type="checkbox" aria-label={`Select ${r.name}`} className="size-4 rounded border-slate-300 text-indigo-600" checked={selected.has(r.id)} onChange={() => toggle(r.id)} />
+                    <input type="checkbox" aria-label={t('views.table.selectRecord', { name: r.name })} className="size-4 rounded border-slate-300 text-indigo-600" checked={selected.has(r.id)} onChange={() => toggle(r.id)} />
                   </td>
                   {cols.map((f) => (
                     <td key={f.apiName} className="max-w-xs truncate px-3 py-2 text-slate-700">
                       {isNameCol(f) ? (
                         <Link to={`/r/${r.id}`} className="font-medium text-indigo-700 hover:underline">
-                          {r.name || '(no name)'}
+                          {r.name || t('views.noName')}
                         </Link>
                       ) : (
                         <FieldValue field={f} value={valueOf(r, f.apiName)} refs={refs} />

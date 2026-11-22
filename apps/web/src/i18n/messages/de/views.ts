@@ -1,0 +1,66 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  noName: '(ohne Namen)',
+  today: 'Heute',
+
+  table: {
+    selectAll: 'Alle auf dieser Seite auswählen',
+    selectRecord: '{name} auswählen',
+    rowActions: 'Aktionen für {name}',
+    selected: { one: '{count} ausgewählt', other: '{count} ausgewählt' },
+    updateField: 'Feld aktualisieren',
+    clearSelection: 'Auswahl aufheben',
+    emptyTitle: 'Keine {plural} gefunden',
+    emptyFiltered: 'Versuchen Sie eine andere Suche oder entfernen Sie Filter.',
+    emptyCreate: 'Erstellen Sie den ersten Datensatz vom Typ {label}, um loszulegen.',
+    deleteTitle: '{label} löschen?',
+    deleteMessage: '„{name}“ wird endgültig gelöscht.',
+    deleted: '„{name}“ gelöscht',
+    bulkDeleteTitle: { one: '{count} Datensatz löschen?', other: '{count} Datensätze löschen?' },
+    bulkDeleteMessage: 'Dies kann nicht rückgängig gemacht werden. Datensätze, die Sie nicht löschen dürfen, werden übersprungen.',
+    bulkDeleted: { one: '{count} Datensatz gelöscht', other: '{count} Datensätze gelöscht' },
+    bulkDeletePartial: '{done} gelöscht; {failed} konnten nicht gelöscht werden: {error}',
+    bulkUpdateTitle: { one: '{count} {singular} aktualisieren', other: '{count} {plural} aktualisieren' },
+    update: 'Aktualisieren',
+    newValue: 'Neuer Wert',
+    newValueHelp: 'Leer lassen, um das Feld zu leeren.',
+    bulkUpdated: { one: '{count} Datensatz aktualisiert', other: '{count} Datensätze aktualisiert' },
+    bulkUpdatePartial: '{done} aktualisiert; {failed} fehlgeschlagen: {error}',
+  },
+
+  kanban: {
+    needsPicklist: 'Kanban-Boards benötigen eine Auswahlliste zum Gruppieren; „{field}“ ist keine.',
+    noValue: 'Ohne {field}',
+    truncated: 'Die ersten {shown} von {total} Datensätzen werden angezeigt. Fügen Sie Filter hinzu, um das Board einzugrenzen.',
+    boardLabel: '{plural} nach {field}',
+    move: '{name} verschieben',
+    dropHere: 'Karten hier ablegen',
+  },
+
+  calendar: {
+    needsDateField: 'Kalenderansichten benötigen ein Datumsfeld; „{field}“ ist keins.',
+    byField: 'nach {field}',
+    previousMonth: 'Vorheriger Monat',
+    nextMonth: 'Nächster Monat',
+    gridLabel: 'Kalender',
+    dayItems: { one: '{date}: {count} Eintrag', other: '{date}: {count} Einträge' },
+    newOn: '{label} am {date} erstellen',
+    more: { one: '+{count} weiterer', other: '+{count} weitere' },
+    truncated: 'Die ersten {shown} von {total} Datensätzen in diesem Zeitraum werden angezeigt.',
+  },
+
+  timeline: {
+    notConfigured: 'Für {label} sind keine Start- und Enddaten für Zeitachsen konfiguriert.',
+    start: 'Beginn',
+    end: 'Ende',
+    range: '{start} – {end}',
+    earlier: 'Früher',
+    later: 'Später',
+    emptyTitle: 'Keine {plural} in diesem Zeitraum',
+    emptyBody: 'Verwenden Sie die Pfeile, um andere Monate anzuzeigen.',
+    barTitle: '{name}: {start} – {end}',
+    barTitleNoEnd: '{name}: {start} – kein Enddatum',
+    truncated: 'Die ersten {shown} von {total} Datensätzen in diesem Zeitraum werden angezeigt.',
+  },
+} satisfies Translation['views'];

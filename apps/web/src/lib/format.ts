@@ -1,14 +1,16 @@
-import { type CrmRecord, type FieldDef, numberFormat, type ObjectDef, type RefMap } from '@titoforce/shared';
+import { type CrmRecord, type FieldDef, type FieldType, numberFormat, type ObjectDef, type RefMap } from '@titoforce/shared';
+import { intlLocale, type MessageKey, t } from '../i18n/index.ts';
 
 type NumberKind = 'currency' | 'percent' | 'number';
 
-const SYSTEM_DEFS: Record<string, Omit<FieldDef, 'apiName'>> = {
-  owner_id: { label: 'Owner', type: 'user' },
-  created_at: { label: 'Created', type: 'datetime' },
-  updated_at: { label: 'Last Modified', type: 'datetime' },
-  created_by: { label: 'Created By', type: 'user' },
-  updated_by: { label: 'Last Modified By', type: 'user' },
-  id: { label: 'Record ID', type: 'text' },
+// Labels are message keys, translated when a definition is requested so they follow the active language.
+const SYSTEM_DEFS: Record<string, { label: MessageKey; type: FieldType }> = {
+  owner_id: { label: 'common.owner', type: 'user' },
+  created_at: { label: 'common.created', type: 'datetime' },
+  updated_at: { label: 'common.lastModified', type: 'datetime' },
+  created_by: { label: 'common.createdBy', type: 'user' },
+  updated_by: { label: 'common.lastModifiedBy', type: 'user' },
+  id: { label: 'common.recordId', type: 'text' },
 };
 
 /** Field definition for any column, including system columns (name, owner_id, created_at, …). */
@@ -17,10 +19,10 @@ export function fieldDef(def: ObjectDef, apiName: string): FieldDef | undefined 
   if (f) return f;
   if (apiName === 'name') {
     const nameField = def.nameTemplate ? undefined : def.fields.find((x) => x.apiName === def.nameField);
-    return { apiName: 'name', label: nameField?.label ?? 'Name', type: 'text' };
+    return { apiName: 'name', label: nameField?.label ?? t('common.name'), type: 'text' };
   }
   const sys = SYSTEM_DEFS[apiName];
-  return sys ? { apiName, ...sys } : undefined;
+  return sys ? { apiName, label: t(sys.label), type: sys.type } : undefined;
 }
 
 export function valueOf(record: CrmRecord, apiName: string): unknown {
@@ -58,10 +60,11 @@ export function listColumns(def: ObjectDef, columns?: string[] | null): string[]
 
 const numberFormats = new Map<string, Intl.NumberFormat>();
 function nf(opts: Intl.NumberFormatOptions): Intl.NumberFormat {
-  const key = JSON.stringify(opts);
+  const locale = intlLocale();
+  const key = `${locale}|${JSON.stringify(opts)}`;
   let f = numberFormats.get(key);
   if (!f) {
-    f = new Intl.NumberFormat(undefined, opts);
+    f = new Intl.NumberFormat(locale, opts);
     numberFormats.set(key, f);
   }
   return f;
@@ -79,8 +82,10 @@ export function formatNumber(n: number, kind: NumberKind = 'number', precision?:
 export function formatCompact(n: number, kind: NumberKind = 'number'): string {
   if (!Number.isFinite(n)) return '';
   if (kind === 'percent') return `${nf({ maximumFractionDigits: 1 }).format(n)}%`;
-  const s = nf({ notation: 'compact', maximumFractionDigits: Math.abs(n) >= 1000 ? 1 : 0 }).format(n);
-  return kind === 'currency' ? (n < 0 ? `-$${s.slice(1)}` : `$${s}`) : s;
+  const maximumFractionDigits = Math.abs(n) >= 1000 ? 1 : 0;
+  // The currency style places the symbol and sign where the locale expects them ("$1.2M", "1,2 M US$", "-$1.2M").
+  if (kind === 'currency') return nf({ style: 'currency', currency: 'USD', notation: 'compact', minimumFractionDigits: 0, maximumFractionDigits }).format(n);
+  return nf({ notation: 'compact', maximumFractionDigits }).format(n);
 }
 
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -107,26 +112,31 @@ export function addDays(iso: string, days: number): string {
 
 export function formatDate(s: string): string {
   const d = parseDate(s);
-  return d ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : s;
+  return d ? d.toLocaleDateString(intlLocale(), { month: 'short', day: 'numeric', year: 'numeric' }) : s;
 }
 
 export function formatDateTime(s: string): string {
   const d = parseDate(s);
-  return d ? d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : s;
+  return d ? d.toLocaleString(intlLocale(), { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : s;
 }
 
 export function relativeTime(s: string, now = Date.now()): string {
   const d = parseDate(s);
   if (!d) return s;
   const sec = Math.round((now - d.getTime()) / 1000);
-  if (sec < 45) return 'just now';
+  if (sec < 45) return t('format.justNow');
   const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return t('format.minutesAgo', { count: min });
   const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return t('format.hoursAgo', { count: hr });
   const day = Math.round(hr / 24);
-  if (day < 7) return `${day}d ago`;
+  if (day < 7) return t('format.daysAgo', { count: day });
   return formatDate(s);
+}
+
+/** Display text of a picklist value: its translation when the server sent one, else the stored value. */
+export function optionLabel(f: Pick<FieldDef, 'options'> | undefined, value: unknown): string {
+  return f?.options?.find((o) => o.value === value)?.label ?? String(value);
 }
 
 /** Plain-text rendering of a field value. */
@@ -142,9 +152,11 @@ export function formatValue(f: FieldDef | undefined, v: unknown, refs?: RefMap):
     case 'datetime':
       return formatDateTime(String(v));
     case 'checkbox':
-      return v ? 'Yes' : 'No';
+      return v ? t('common.yes') : t('common.no');
+    case 'picklist':
+      return optionLabel(f, v);
     case 'multipicklist':
-      return Array.isArray(v) ? v.join(', ') : String(v);
+      return (Array.isArray(v) ? v : [v]).map((x) => optionLabel(f, x)).join(', ');
     case 'lookup':
     case 'user':
       return refs?.[String(v)]?.name ?? String(v);

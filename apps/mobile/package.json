@@ -1,0 +1,22 @@
+{
+  "name": "@titoforce/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "titoForce iOS and Android apps: the web app in a Capacitor shell that signs in to any titoForce server.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "sync": "npm run build -w @titoforce/web && cap sync",
+    "assets": "npx --yes @capacitor/assets@4 generate --android --ios",
+    "android": "cap open android",
+    "ios": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/ios": "^8.6.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2"
+  }
+}

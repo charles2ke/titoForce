@@ -14,6 +14,7 @@ const page = (C: Page) => (
 );
 
 const Login = lazy(() => import('./pages/Login.tsx'));
+const Signup = lazy(() => import('./pages/Signup.tsx'));
 const PublicForm = lazy(() => import('./pages/PublicForm.tsx'));
 const AppHome = lazy(() => import('./pages/AppHome.tsx'));
 const ObjectList = lazy(() => import('./pages/ObjectList.tsx'));
@@ -40,9 +41,13 @@ const SetupAutomations = lazy(() => import('./pages/setup/Automations.tsx'));
 const SetupApprovalProcesses = lazy(() => import('./pages/setup/ApprovalProcesses.tsx'));
 const SetupAgents = lazy(() => import('./pages/setup/Agents.tsx'));
 const SetupRuns = lazy(() => import('./pages/setup/Runs.tsx'));
+const SetupTranslations = lazy(() => import('./pages/setup/Translations.tsx'));
+const SetupSandboxes = lazy(() => import('./pages/setup/Sandboxes.tsx'));
+const SetupSandboxDeploy = lazy(() => import('./pages/setup/Sandboxes.tsx').then((m) => ({ default: m.SandboxDeploy })));
 
 export const router = createBrowserRouter([
   { path: '/login', element: page(Login), errorElement: <RouteError /> },
+  { path: '/signup', element: page(Signup), errorElement: <RouteError /> },
   { path: '/f/:formId', element: page(PublicForm), errorElement: <RouteError /> },
   {
     element: <RequireAuth />,
@@ -82,6 +87,9 @@ export const router = createBrowserRouter([
               { path: 'approval-processes', element: page(SetupApprovalProcesses) },
               { path: 'agents', element: page(SetupAgents) },
               { path: 'runs', element: page(SetupRuns) },
+              { path: 'translations', element: page(SetupTranslations) },
+              { path: 'sandboxes', element: page(SetupSandboxes) },
+              { path: 'sandboxes/:id', element: page(SetupSandboxDeploy) },
             ],
           },
           { path: '*', element: <NotFound /> },

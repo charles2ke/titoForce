@@ -7,15 +7,16 @@ import { api, errorMessage } from '../api.ts';
 import { AgentChat, AUTONOMY_LABEL } from '../components/AgentChat.tsx';
 import { useConfirm, useToast } from '../components/feedback.tsx';
 import { Badge, Button, cx, EmptyState, ErrorBanner, Loading, ObjectTile, Popover } from '../components/ui.tsx';
+import { type MessageKey, t } from '../i18n/index.ts';
 import { relativeTime } from '../lib/format.ts';
 import { useAgents, usePermissions } from '../lib/hooks.ts';
 
 type ConversationSummary = Omit<Conversation, 'messages'>;
 
-const AUTONOMY_HELP: Record<AgentDef['autonomy'], string> = {
-  read_only: 'Can look things up but never changes data.',
-  approval_required: 'Proposes changes; a person approves each one before it runs.',
-  autonomous: 'Makes changes directly, within your permissions. Every action is logged.',
+const AUTONOMY_HELP: Record<AgentDef['autonomy'], MessageKey> = {
+  read_only: 'agents.autonomyHelp.readOnly',
+  approval_required: 'agents.autonomyHelp.approvalRequired',
+  autonomous: 'agents.autonomyHelp.autonomous',
 };
 
 export default function Agents() {
@@ -35,16 +36,16 @@ export default function Agents() {
     return (
       <div className="p-6">
         <EmptyState
-          title="No active agents"
+          title={t('agents.empty.title')}
           action={
             perms.canManageAgents ? (
               <Link to="/setup/agents" className="text-sm font-medium text-indigo-600 hover:underline">
-                Set up agents
+                {t('agents.empty.setUp')}
               </Link>
             ) : undefined
           }
         >
-          Ask an administrator to activate an agent.
+          {t('agents.empty.body')}
         </EmptyState>
       </div>
     );
@@ -84,16 +85,16 @@ function AgentPage({ agent, agents }: { agent: AgentDef; agents: AgentDef[] }) {
 
   return (
     <div className="flex h-full min-h-0">
-      <aside className="hidden w-72 shrink-0 flex-col border-r border-slate-200 bg-white @2xl:flex" aria-label="Agents">
+      <aside className="hidden w-72 shrink-0 flex-col border-r border-slate-200 bg-white @2xl:flex" aria-label={t('agents.page.sidebar')}>
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
-          <h1 className="text-sm font-semibold text-slate-900">AI agents</h1>
+          <h1 className="text-sm font-semibold text-slate-900">{t('agents.page.title')}</h1>
           {perms.canManageAgents && (
-            <Link to="/setup/agents" className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Manage agents" title="Manage agents">
+            <Link to="/setup/agents" className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label={t('agents.page.manage')} title={t('agents.page.manage')}>
               <Settings2 className="size-4" />
             </Link>
           )}
         </div>
-        <nav className="space-y-0.5 px-2" aria-label="Agent list">
+        <nav className="space-y-0.5 px-2" aria-label={t('agents.page.agentList')}>
           {agents.map((a) => (
             <Link
               key={a.id}
@@ -108,7 +109,7 @@ function AgentPage({ agent, agents }: { agent: AgentDef; agents: AgentDef[] }) {
         </nav>
         <div className="mt-4 flex min-h-0 flex-1 flex-col border-t border-slate-100">
           <div className="flex items-center justify-between px-4 pt-3 pb-1">
-            <h2 className="text-xs font-semibold tracking-wide text-slate-400 uppercase">Conversations</h2>
+            <h2 className="text-xs font-semibold tracking-wide text-slate-400 uppercase">{t('agents.page.conversations')}</h2>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">{history}</div>
         </div>
@@ -119,7 +120,7 @@ function AgentPage({ agent, agents }: { agent: AgentDef; agents: AgentDef[] }) {
           <ObjectTile icon={agent.icon} color={agent.color} />
           <div className="min-w-0 flex-1">
             <label htmlFor="agent-switch" className="sr-only">
-              Agent
+              {t('agents.page.agent')}
             </label>
             <select id="agent-switch" className="input h-8 w-auto py-0 font-semibold @2xl:hidden" value={agent.id} onChange={(e) => navigate(`/agents/${e.target.value}`)}>
               {agents.map((a) => (
@@ -131,7 +132,7 @@ function AgentPage({ agent, agents }: { agent: AgentDef; agents: AgentDef[] }) {
             <h2 className="hidden truncate font-semibold text-slate-900 @2xl:block">{agent.name}</h2>
             <p className="truncate text-xs text-slate-500">{agent.description}</p>
           </div>
-          <span title={AUTONOMY_HELP[agent.autonomy]}>
+          <span title={t(AUTONOMY_HELP[agent.autonomy])}>
             <Badge color={autonomy.color}>{autonomy.label}</Badge>
           </span>
           <Popover
@@ -139,14 +140,14 @@ function AgentPage({ agent, agents }: { agent: AgentDef; agents: AgentDef[] }) {
             className="w-72 p-3"
             trigger={({ toggle, open: isOpen }) => (
               <Button size="sm" icon={Wrench} onClick={toggle} aria-expanded={isOpen}>
-                {agent.tools.length} tools
+                {t('agents.page.toolCount', { count: agent.tools.length })}
               </Button>
             )}
           >
             {() => (
               <div>
-                <p className="text-xs text-slate-500">{AUTONOMY_HELP[agent.autonomy]}</p>
-                <ul className="mt-2 flex flex-wrap gap-1" aria-label="Tools">
+                <p className="text-xs text-slate-500">{t(AUTONOMY_HELP[agent.autonomy])}</p>
+                <ul className="mt-2 flex flex-wrap gap-1" aria-label={t('agents.page.tools')}>
                   {agent.tools.map((t) => (
                     <li key={t}>
                       <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-700">{t}</code>
@@ -162,7 +163,7 @@ function AgentPage({ agent, agents }: { agent: AgentDef; agents: AgentDef[] }) {
               className="max-h-96 w-72 overflow-y-auto p-2"
               trigger={({ toggle, open: isOpen }) => (
                 <Button size="sm" icon={History} onClick={toggle} aria-expanded={isOpen}>
-                  History
+                  {t('agents.page.history')}
                 </Button>
               )}
             >
@@ -174,7 +175,7 @@ function AgentPage({ agent, agents }: { agent: AgentDef; agents: AgentDef[] }) {
             </Popover>
           </div>
           <Button size="sm" icon={MessageSquarePlus} onClick={() => open(null, true)}>
-            New chat
+            {t('agents.page.newChat')}
           </Button>
         </header>
         <div className="min-h-0 flex-1">
@@ -210,11 +211,11 @@ function ConversationList({ agent, activeId, onOpen }: { agent: AgentDef; active
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
-  if (list.isLoading) return <p className="px-2 py-1 text-xs text-slate-400">Loading…</p>;
+  if (list.isLoading) return <p className="px-2 py-1 text-xs text-slate-400">{t('common.loading')}</p>;
   if (list.error) return <ErrorBanner error={list.error} />;
-  if (!list.data?.length) return <p className="px-2 py-1 text-xs text-slate-400">No conversations with {agent.name} yet.</p>;
+  if (!list.data?.length) return <p className="px-2 py-1 text-xs text-slate-400">{t('agents.conversations.empty', { agent: agent.name })}</p>;
   return (
-    <ul className="space-y-0.5" aria-label={`Conversations with ${agent.name}`}>
+    <ul className="space-y-0.5" aria-label={t('agents.conversations.label', { agent: agent.name })}>
       {list.data.map((c) => (
         <li key={c.id} className="group flex items-center">
           <button
@@ -226,16 +227,16 @@ function ConversationList({ agent, activeId, onOpen }: { agent: AgentDef; active
           >
             <MessageSquare className="mt-0.5 size-3.5 shrink-0 text-slate-400" aria-hidden />
             <span className="min-w-0">
-              <span className="block truncate text-sm text-slate-700">{c.title || 'Untitled conversation'}</span>
+              <span className="block truncate text-sm text-slate-700">{c.title || t('agents.conversations.untitled')}</span>
               <span className="block text-[11px] text-slate-400">{relativeTime(c.updatedAt)}</span>
             </span>
           </button>
           <button
             type="button"
-            aria-label={`Delete conversation “${c.title || 'Untitled'}”`}
+            aria-label={t('agents.conversations.delete', { title: c.title || t('common.untitled') })}
             className="ml-0.5 rounded p-1 text-slate-300 opacity-0 group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-600 focus-visible:opacity-100"
             onClick={async () => {
-              const ok = await confirm({ title: 'Delete conversation?', message: 'The conversation history will be removed. Agent run logs are kept.', confirmLabel: 'Delete', danger: true });
+              const ok = await confirm({ title: t('agents.conversations.deleteTitle'), message: t('agents.conversations.deleteMessage'), confirmLabel: t('common.delete'), danger: true });
               if (ok) remove.mutate(c.id);
             }}
           >

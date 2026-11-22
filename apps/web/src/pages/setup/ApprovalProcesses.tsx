@@ -4,12 +4,13 @@ import { Info, Pencil, Plus, Search, Stamp, Trash } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { api, errorMessage } from '../../api.ts';
-import { ActionsEditor, actionsProblem } from '../../components/ActionsEditor.tsx';
+import { ACTION_LABELS, ActionsEditor, actionsProblem } from '../../components/ActionsEditor.tsx';
 import { useConfirm, useToast } from '../../components/feedback.tsx';
 import { UserSelect } from '../../components/FieldInput.tsx';
 import { completeFilter, describeFilter, FilterEditor } from '../../components/FilterEditor.tsx';
 import { InlineToggle } from '../../components/pickers.tsx';
 import { Button, cx, EmptyState, ErrorBanner, FormField, IconButton, Loading, Modal, ObjectTile, PageHeader, Toggle } from '../../components/ui.tsx';
+import { inSentence, type MessageKey, t } from '../../i18n/index.ts';
 import { useObjects, useUsers } from '../../lib/hooks.ts';
 
 // The server validates process actions without any agents, so "Run AI agent" is never accepted here.
@@ -19,10 +20,10 @@ const PATH_RE = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){0,4}$/;
 const CUSTOM = '__custom';
 
 type Stage = 'onSubmit' | 'onApprove' | 'onReject';
-const STAGES: { id: Stage; title: string; help: string; item: string; add: string; types: AutomationActionType[] }[] = [
-  { id: 'onSubmit', title: 'When submitted', help: 'Runs right after the record is submitted, e.g. set Status to “In Review”.', item: 'On submit action', add: 'Add submit action', types: SUBMIT_TYPES },
-  { id: 'onApprove', title: 'When approved', help: 'Runs after the approver approves. Use “Submit for approval” to chain a next approval step.', item: 'On approve action', add: 'Add approve action', types: DECISION_TYPES },
-  { id: 'onReject', title: 'When rejected', help: 'Runs after the approver rejects the request.', item: 'On reject action', add: 'Add reject action', types: DECISION_TYPES },
+const STAGES: { id: Stage; title: MessageKey; help: MessageKey; item: MessageKey; add: MessageKey; types: AutomationActionType[] }[] = [
+  { id: 'onSubmit', title: 'setupApprovals.stages.onSubmit.title', help: 'setupApprovals.stages.onSubmit.help', item: 'setupApprovals.stages.onSubmit.item', add: 'setupApprovals.stages.onSubmit.add', types: SUBMIT_TYPES },
+  { id: 'onApprove', title: 'setupApprovals.stages.onApprove.title', help: 'setupApprovals.stages.onApprove.help', item: 'setupApprovals.stages.onApprove.item', add: 'setupApprovals.stages.onApprove.add', types: DECISION_TYPES },
+  { id: 'onReject', title: 'setupApprovals.stages.onReject.title', help: 'setupApprovals.stages.onReject.help', item: 'setupApprovals.stages.onReject.item', add: 'setupApprovals.stages.onReject.add', types: DECISION_TYPES },
 ];
 
 interface PathGroup {
@@ -34,19 +35,19 @@ interface PathGroup {
 function approverPaths(def: ObjectDef, objects: ObjectDef[]): PathGroup[] {
   const target = (api: string | null | undefined) => (api && api !== '*' ? objects.find((o) => o.apiName === api) : undefined);
   const users = (d: ObjectDef, prefix: string, labelPrefix: string) => [
-    { path: `${prefix}owner_id`, label: prefix ? `${labelPrefix}Owner` : 'Record owner' },
+    { path: `${prefix}owner_id`, label: prefix ? labelPrefix + t('common.owner') : t('setupApprovals.approverPaths.recordOwner') },
     ...d.fields.filter((f) => f.type === 'user').map((f) => ({ path: prefix + f.apiName, label: labelPrefix + f.label })),
   ];
-  const groups: PathGroup[] = [{ label: `This ${def.label.toLowerCase()}`, options: users(def, '', '') }];
+  const groups: PathGroup[] = [{ label: t('setupApprovals.approverPaths.thisObject', { object: inSentence(def.label) }), options: users(def, '', '') }];
   for (const l of def.fields) {
-    const t = l.type === 'lookup' ? target(l.referenceTo) : undefined;
-    if (!t) continue;
-    const options = users(t, `${l.apiName}.`, `${l.label} → `);
-    for (const l2 of t.fields) {
+    const t1 = l.type === 'lookup' ? target(l.referenceTo) : undefined;
+    if (!t1) continue;
+    const options = users(t1, `${l.apiName}.`, `${l.label} → `);
+    for (const l2 of t1.fields) {
       const t2 = l2.type === 'lookup' ? target(l2.referenceTo) : undefined;
       if (t2) options.push(...users(t2, `${l.apiName}.${l2.apiName}.`, `${l.label} → ${l2.label} → `));
     }
-    groups.push({ label: `${l.label} (${t.label})`, options });
+    groups.push({ label: `${l.label} (${t1.label})`, options });
   }
   return groups;
 }
@@ -90,16 +91,16 @@ function ProcessForm({ process, objects, defaultObject, onClose }: { process: Ap
   const first = path.split('.')[0] ?? '';
 
   const problem = !name.trim()
-    ? 'Enter a name.'
+    ? t('setupApprovals.form.problems.enterName')
     : !def
-      ? 'Choose an object.'
+      ? t('setupApprovals.form.problems.chooseObject')
       : mode === 'user' && !userId
-        ? 'Choose the approver.'
+        ? t('setupApprovals.form.problems.chooseApprover')
         : mode === 'field' && !PATH_RE.test(path)
-          ? 'Enter a valid approver field path.'
+          ? t('setupApprovals.form.problems.enterPath')
           : mode === 'field' && first !== 'owner_id' && !def.fields.some((f) => f.apiName === first)
-            ? `${def.label} has no field “${first}”.`
-            : (actionsProblem(stages.onSubmit, 'On submit action') ?? actionsProblem(stages.onApprove, 'On approve action') ?? actionsProblem(stages.onReject, 'On reject action'));
+            ? t('setupApprovals.form.problems.noSuchField', { object: def.label, field: first })
+            : (actionsProblem(stages.onSubmit, t('setupApprovals.stages.onSubmit.item')) ?? actionsProblem(stages.onApprove, t('setupApprovals.stages.onApprove.item')) ?? actionsProblem(stages.onReject, t('setupApprovals.stages.onReject.item')));
 
   const save = useMutation({
     mutationFn: () => {
@@ -115,7 +116,7 @@ function ProcessForm({ process, objects, defaultObject, onClose }: { process: Ap
       return isNew ? api.post<ApprovalProcessDef>('/api/approval-processes', body) : api.patch<ApprovalProcessDef>(`/api/approval-processes/${process!.id}`, body);
     },
     onSuccess: async (saved) => {
-      toast.success(isNew ? `${saved.name} created` : `${saved.name} saved`);
+      toast.success(isNew ? t('setupApprovals.toasts.created', { name: saved.name }) : t('setupApprovals.toasts.saved', { name: saved.name }));
       onClose();
       await qc.invalidateQueries({ queryKey: ['approval-processes'] });
     },
@@ -125,7 +126,7 @@ function ProcessForm({ process, objects, defaultObject, onClose }: { process: Ap
     if (next === object) return;
     const used = conditions?.rules.length || stages.onSubmit.length || stages.onApprove.length || stages.onReject.length || (mode === 'field' && path !== 'owner_id');
     if (used) {
-      const ok = await confirm({ title: 'Change the object?', message: 'The entry conditions, approver field and actions refer to the current object and will be cleared.', confirmLabel: 'Change object' });
+      const ok = await confirm({ title: t('setupApprovals.form.changeObjectTitle'), message: t('setupApprovals.form.changeObjectMessage'), confirmLabel: t('setupApprovals.form.changeObjectConfirm') });
       if (!ok) return;
     }
     setObject(next);
@@ -139,14 +140,14 @@ function ProcessForm({ process, objects, defaultObject, onClose }: { process: Ap
     <Modal
       open
       onClose={onClose}
-      title={isNew ? 'New approval process' : `Edit ${process?.name}`}
+      title={isNew ? t('setupApprovals.new') : t('setupApprovals.edit', { name: process?.name ?? '' })}
       size="xl"
       footer={
         <>
           {problem && <span className="mr-auto text-xs text-slate-500">{problem}</span>}
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" type="submit" form={formId} disabled={!!problem} loading={save.isPending}>
-            {isNew ? 'Create process' : 'Save process'}
+            {isNew ? t('setupApprovals.form.create') : t('setupApprovals.form.save')}
           </Button>
         </>
       }
@@ -161,13 +162,13 @@ function ProcessForm({ process, objects, defaultObject, onClose }: { process: Ap
       >
         <ErrorBanner error={save.error} />
         <section className="grid gap-4 sm:grid-cols-2">
-          <FormField label="Name" required htmlFor={ids.name}>
-            <input id={ids.name} className="input" value={name} maxLength={120} placeholder="Discount approval" onChange={(e) => setName(e.target.value)} />
+          <FormField label={t('common.name')} required htmlFor={ids.name}>
+            <input id={ids.name} className="input" value={name} maxLength={120} placeholder={t('setupApprovals.form.namePlaceholder')} onChange={(e) => setName(e.target.value)} />
           </FormField>
           {isNew ? (
-            <FormField label="Object" required htmlFor={ids.object}>
+            <FormField label={t('common.object')} required htmlFor={ids.object}>
               <select id={ids.object} className="input" value={object} onChange={(e) => void changeObject(e.target.value)}>
-                {!def && <option value="">Choose an object…</option>}
+                {!def && <option value="">{t('setupApprovals.form.chooseObject')}</option>}
                 {sorted.map((o) => (
                   <option key={o.apiName} value={o.apiName}>
                     {o.label}
@@ -176,14 +177,14 @@ function ProcessForm({ process, objects, defaultObject, onClose }: { process: Ap
               </select>
             </FormField>
           ) : (
-            <FormField label="Object" help="The object of an existing process can’t be changed.">
+            <FormField label={t('common.object')} help={t('setupApprovals.form.objectFixed')}>
               <div className="input flex items-center gap-2 bg-slate-50 text-slate-700">
                 {def && <ObjectTile icon={def.icon} color={def.color} size="sm" />}
                 {def?.label ?? object}
               </div>
             </FormField>
           )}
-          <FormField label="Description" htmlFor={ids.desc} className="sm:col-span-2">
+          <FormField label={t('common.description')} htmlFor={ids.desc} className="sm:col-span-2">
             <textarea id={ids.desc} className="input" rows={2} maxLength={1000} value={description} onChange={(e) => setDescription(e.target.value)} />
           </FormField>
         </section>
@@ -191,22 +192,20 @@ function ProcessForm({ process, objects, defaultObject, onClose }: { process: Ap
         {def && (
           <>
             <section className="space-y-2 rounded-xl border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-800">1. Entry conditions (optional)</h3>
-              <p className="text-xs text-slate-500">
-                Only records matching these conditions can be submitted. When several active processes exist for {def.pluralLabel.toLowerCase()}, the first matching one is used.
-              </p>
+              <h3 className="text-sm font-semibold text-slate-800">{t('setupApprovals.form.entryConditions')}</h3>
+              <p className="text-xs text-slate-500">{t('setupApprovals.form.entryConditionsHelp', { objects: inSentence(def.pluralLabel) })}</p>
               <FilterEditor key={object} def={def} value={conditions} onChange={setConditions} />
             </section>
 
             <section className="space-y-3 rounded-xl border border-slate-200 p-4">
               <h3 id={ids.mode} className="text-sm font-semibold text-slate-800">
-                2. Approver
+                {t('setupApprovals.form.approver')}
               </h3>
               <div role="radiogroup" aria-labelledby={ids.mode} className="grid gap-2 sm:grid-cols-2">
                 {(
                   [
-                    { id: 'user', title: 'A specific user', text: 'Every request goes to the same person.' },
-                    { id: 'field', title: 'Based on the record', text: 'Someone related to the record, e.g. its owner or the employee’s manager.' },
+                    { id: 'user', title: t('setupApprovals.form.approverModes.user.title'), text: t('setupApprovals.form.approverModes.user.text') },
+                    { id: 'field', title: t('setupApprovals.form.approverModes.field.title'), text: t('setupApprovals.form.approverModes.field.text') },
                   ] as const
                 ).map((m) => (
                   <label key={m.id} className={cx('flex cursor-pointer items-start gap-2.5 rounded-lg border p-3', mode === m.id ? 'border-indigo-500 bg-indigo-50/50 ring-1 ring-indigo-500' : 'border-slate-200 hover:bg-slate-50')}>
@@ -219,12 +218,12 @@ function ProcessForm({ process, objects, defaultObject, onClose }: { process: Ap
                 ))}
               </div>
               {mode === 'user' ? (
-                <FormField label="Approver user" required htmlFor={ids.user} className="sm:w-80">
-                  <UserSelect id={ids.user} value={userId} onChange={setUserId} emptyLabel="Choose a user…" />
+                <FormField label={t('setupApprovals.form.approverUser')} required htmlFor={ids.user} className="sm:w-80">
+                  <UserSelect id={ids.user} value={userId} onChange={setUserId} emptyLabel={t('setupApprovals.form.chooseUser')} />
                 </FormField>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <FormField label="Approver field" required htmlFor={ids.path} help="The user found here at submission time approves the request.">
+                  <FormField label={t('setupApprovals.form.approverField')} required htmlFor={ids.path} help={t('setupApprovals.form.approverFieldHelp')}>
                     <select
                       id={ids.path}
                       className="input"
@@ -246,20 +245,20 @@ function ProcessForm({ process, objects, defaultObject, onClose }: { process: Ap
                           ))}
                         </optgroup>
                       ))}
-                      <option value={CUSTOM}>Custom path…</option>
+                      <option value={CUSTOM}>{t('setupApprovals.form.customPath')}</option>
                     </select>
                   </FormField>
-                  <FormField label="Fallback approver" htmlFor={ids.fallback} help="Used when the field is empty or the user is inactive.">
-                    <UserSelect id={ids.fallback} value={fallback} onChange={setFallback} emptyLabel="None — submission fails" />
+                  <FormField label={t('setupApprovals.form.fallbackApprover')} htmlFor={ids.fallback} help={t('setupApprovals.form.fallbackApproverHelp')}>
+                    <UserSelect id={ids.fallback} value={fallback} onChange={setFallback} emptyLabel={t('setupApprovals.form.noFallback')} />
                   </FormField>
                   {custom && (
                     <FormField
-                      label="Field path"
+                      label={t('setupApprovals.form.fieldPath')}
                       required
                       htmlFor={ids.custom}
                       className="sm:col-span-2"
-                      help="Dot-separated API names: lookups to follow, ending in a user field or owner_id (up to 5 parts), e.g. employee.manager.user."
-                      error={path && !PATH_RE.test(path) ? 'Use lowercase API names separated by dots.' : undefined}
+                      help={t('setupApprovals.form.fieldPathHelp', { ownerId: 'owner_id', example: 'employee.manager.user' })}
+                      error={path && !PATH_RE.test(path) ? t('setupApprovals.form.fieldPathError') : undefined}
                     >
                       <input id={ids.custom} className="input font-mono" value={path} placeholder="employee.manager.user" onChange={(e) => setPath(e.target.value.trim())} />
                     </FormField>
@@ -270,17 +269,17 @@ function ProcessForm({ process, objects, defaultObject, onClose }: { process: Ap
 
             <section className="space-y-4 rounded-xl border border-slate-200 p-4">
               <div>
-                <h3 className="text-sm font-semibold text-slate-800">3. Actions</h3>
+                <h3 className="text-sm font-semibold text-slate-800">{t('setupApprovals.form.actions')}</h3>
                 <p className="flex items-start gap-1.5 text-xs text-slate-500">
                   <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                  The approver is always notified. Actions run as the approval process, so they aren’t limited by anyone’s permissions.
+                  {t('setupApprovals.form.actionsNote')}
                 </p>
               </div>
               {STAGES.map((s) => (
                 <div key={s.id} className="space-y-2">
                   <div>
-                    <h4 className="text-sm font-medium text-slate-800">{s.title}</h4>
-                    <p className="text-xs text-slate-500">{s.help}</p>
+                    <h4 className="text-sm font-medium text-slate-800">{t(s.title)}</h4>
+                    <p className="text-xs text-slate-500">{t(s.help, { action: ACTION_LABELS.submit_approval })}</p>
                   </div>
                   <ActionsEditor
                     key={object}
@@ -288,9 +287,9 @@ function ProcessForm({ process, objects, defaultObject, onClose }: { process: Ap
                     value={stages[s.id]}
                     onChange={(v) => setStages((cur) => ({ ...cur, [s.id]: v }))}
                     types={s.types}
-                    itemLabel={s.item}
-                    addLabel={s.add}
-                    emptyText="No actions."
+                    itemLabel={t(s.item)}
+                    addLabel={t(s.add)}
+                    emptyText={t('setupApprovals.form.actionsEmpty')}
                   />
                 </div>
               ))}
@@ -298,7 +297,7 @@ function ProcessForm({ process, objects, defaultObject, onClose }: { process: Ap
           </>
         )}
 
-        <Toggle checked={active} onChange={setActive} label="Active" />
+        <Toggle checked={active} onChange={setActive} label={t('common.active')} />
       </form>
     </Modal>
   );
@@ -317,21 +316,21 @@ export default function ApprovalProcesses() {
   const [editing, setEditing] = useState<ApprovalProcessDef | 'new' | null>(null);
 
   const objectOf = (api: string) => objects.data?.find((o) => o.apiName === api);
-  const userName = (id: string | undefined) => (id ? (users.data?.find((u) => u.id === id)?.name ?? 'Unknown user') : '');
+  const userName = (id: string | undefined) => (id ? (users.data?.find((u) => u.id === id)?.name ?? t('common.unknownUser')) : '');
 
   const toggle = useMutation({
     mutationFn: ({ p, active }: { p: ApprovalProcessDef; active: boolean }) => api.patch<ApprovalProcessDef>(`/api/approval-processes/${p.id}`, { active }),
     onMutate: ({ p, active }) => {
       qc.setQueryData<ApprovalProcessDef[]>(['approval-processes'], (old) => old?.map((x) => (x.id === p.id ? { ...x, active } : x)));
     },
-    onSuccess: (_r, { p, active }) => toast.success(`${p.name} ${active ? 'activated' : 'deactivated'}`),
+    onSuccess: (_r, { p, active }) => toast.success(active ? t('setupApprovals.toasts.activated', { name: p.name }) : t('setupApprovals.toasts.deactivated', { name: p.name })),
     onError: (e) => toast.error(errorMessage(e)),
     onSettled: () => qc.invalidateQueries({ queryKey: ['approval-processes'] }),
   });
   const remove = useMutation({
     mutationFn: (p: ApprovalProcessDef) => api.del(`/api/approval-processes/${p.id}`),
     onSuccess: async (_r, p) => {
-      toast.success(`${p.name} deleted`);
+      toast.success(t('setupApprovals.toasts.deleted', { name: p.name }));
       await qc.invalidateQueries({ queryKey: ['approval-processes'] });
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -346,11 +345,11 @@ export default function ApprovalProcesses() {
   return (
     <div className="mx-auto max-w-7xl p-6">
       <PageHeader
-        title="Approval processes"
-        subtitle="Route records to an approver and run actions when they are submitted, approved or rejected."
+        title={t('setupApprovals.title')}
+        subtitle={t('setupApprovals.subtitle')}
         actions={
           <Button variant="primary" icon={Plus} disabled={!objects.data} onClick={() => setEditing('new')}>
-            New approval process
+            {t('setupApprovals.new')}
           </Button>
         }
       />
@@ -358,10 +357,10 @@ export default function ApprovalProcesses() {
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-3">
           <div className="relative w-full max-w-xs">
             <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-slate-400" aria-hidden />
-            <input type="search" aria-label="Search approval processes" placeholder="Search processes…" className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input type="search" aria-label={t('setupApprovals.list.searchLabel')} placeholder={t('setupApprovals.list.searchPlaceholder')} className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <select
-            aria-label="Filter by object"
+            aria-label={t('setupApprovals.list.filterByObject')}
             className="input w-auto"
             value={objectFilter}
             onChange={(e) => {
@@ -371,7 +370,7 @@ export default function ApprovalProcesses() {
               setParams(next, { replace: true });
             }}
           >
-            <option value="">All objects</option>
+            <option value="">{t('setupApprovals.list.allObjects')}</option>
             {objectFilter && !usedObjects.some((o) => o.api === objectFilter) && <option value={objectFilter}>{objectOf(objectFilter)?.label ?? objectFilter}</option>}
             {usedObjects.map((o) => (
               <option key={o.api} value={o.api}>
@@ -389,44 +388,44 @@ export default function ApprovalProcesses() {
         ) : list.length === 0 ? (
           <EmptyState
             icon={Stamp}
-            title={term || objectFilter ? 'No approval processes match' : 'No approval processes yet'}
+            title={term || objectFilter ? t('setupApprovals.list.noMatch') : t('setupApprovals.list.empty')}
             action={
               !term && !objectFilter ? (
                 <Button variant="primary" icon={Plus} disabled={!objects.data} onClick={() => setEditing('new')}>
-                  Create your first approval process
+                  {t('setupApprovals.list.createFirst')}
                 </Button>
               ) : undefined
             }
           >
-            {!term && !objectFilter && 'Approval processes let people submit records such as discounts or time off for sign-off.'}
+            {!term && !objectFilter && t('setupApprovals.list.emptyText')}
           </EmptyState>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50/70 text-left text-xs font-semibold text-slate-500 uppercase">
                 <tr>
-                  <th className="px-4 py-2.5">Name</th>
-                  <th className="px-4 py-2.5">Object</th>
-                  <th className="px-4 py-2.5">Entry conditions</th>
-                  <th className="px-4 py-2.5">Approver</th>
-                  <th className="px-4 py-2.5">Actions</th>
-                  <th className="px-4 py-2.5">Active</th>
+                  <th className="px-4 py-2.5">{t('common.name')}</th>
+                  <th className="px-4 py-2.5">{t('common.object')}</th>
+                  <th className="px-4 py-2.5">{t('setupApprovals.list.entryConditions')}</th>
+                  <th className="px-4 py-2.5">{t('setupApprovals.list.approver')}</th>
+                  <th className="px-4 py-2.5">{t('setupApprovals.list.actions')}</th>
+                  <th className="px-4 py-2.5">{t('common.active')}</th>
                   <th className="px-4 py-2.5">
-                    <span className="sr-only">Row actions</span>
+                    <span className="sr-only">{t('setupApprovals.list.rowActions')}</span>
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {list.map((p) => {
                   const def = objectOf(p.object);
-                  const conditions = def ? describeFilter(def, p.entryConditions) : p.entryConditions?.rules.length ? `${p.entryConditions.rules.length} conditions` : 'No conditions';
+                  const conditions = def ? describeFilter(def, p.entryConditions) : p.entryConditions?.rules.length ? t('setupApprovals.list.conditionCount', { count: p.entryConditions.rules.length }) : t('setupApprovals.list.noConditions');
                   const approver =
                     p.approver.type === 'user' ? (
                       userName(p.approver.userId)
                     ) : (
                       <>
                         {pathLabel(def, objects.data ?? [], p.approver.path)}
-                        {p.approver.fallbackUserId && <span className="block text-xs text-slate-500">Fallback: {userName(p.approver.fallbackUserId)}</span>}
+                        {p.approver.fallbackUserId && <span className="block text-xs text-slate-500">{t('setupApprovals.list.fallback', { name: userName(p.approver.fallbackUserId) })}</span>}
                       </>
                     );
                   return (
@@ -450,26 +449,26 @@ export default function ApprovalProcesses() {
                       </td>
                       <td className="max-w-56 px-4 py-2.5 text-slate-700">{approver}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">
-                        <span title="Actions on submit / approve / reject">
+                        <span title={t('setupApprovals.list.actionsTitle')}>
                           {p.onSubmit.length} / {p.onApprove.length} / {p.onReject.length}
                         </span>
                       </td>
                       <td className="px-4 py-2.5">
-                        <InlineToggle checked={p.active} label={`${p.name} active`} disabled={toggle.isPending} onChange={(active) => toggle.mutate({ p, active })} />
+                        <InlineToggle checked={p.active} label={t('setupApprovals.list.activeLabel', { name: p.name })} disabled={toggle.isPending} onChange={(active) => toggle.mutate({ p, active })} />
                       </td>
                       <td className="px-4 py-2.5">
                         <div className="flex justify-end gap-0.5">
-                          <IconButton icon={Pencil} label={`Edit ${p.name}`} disabled={!objects.data} onClick={() => setEditing(p)} />
+                          <IconButton icon={Pencil} label={t('setupApprovals.edit', { name: p.name })} disabled={!objects.data} onClick={() => setEditing(p)} />
                           <IconButton
                             icon={Trash}
-                            label={`Delete ${p.name}`}
+                            label={t('setupApprovals.list.delete', { name: p.name })}
                             className="hover:text-rose-600"
                             disabled={remove.isPending}
                             onClick={async () => {
                               const ok = await confirm({
-                                title: `Delete ${p.name}?`,
-                                message: 'Records can no longer be submitted to this process. Processes with pending requests can’t be deleted.',
-                                confirmLabel: 'Delete process',
+                                title: t('setupApprovals.list.deleteTitle', { name: p.name }),
+                                message: t('setupApprovals.list.deleteMessage'),
+                                confirmLabel: t('setupApprovals.list.deleteConfirm'),
                                 danger: true,
                               });
                               if (ok) remove.mutate(p);

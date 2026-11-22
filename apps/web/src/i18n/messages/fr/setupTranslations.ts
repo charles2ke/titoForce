@@ -1,0 +1,50 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  title: 'Traductions',
+  subtitle:
+    'Traduisez les libellés des objets, des champs, des valeurs de liste de sélection, des sections de présentation de page et des applications. Chacun les voit dans la langue de son interface titoForce.',
+  englishBase: 'Les libellés sont définis en anglais. Pour modifier un libellé en anglais, renommez-le là où il est défini, dans Configuration.',
+  language: 'Langue',
+  type: 'Type',
+  types: {
+    all: 'Tous les types',
+    object: 'Objets',
+    field: 'Champs',
+    picklist: 'Valeurs de liste de sélection',
+    layout: 'Sections de présentation de page',
+    app: 'Applications',
+  },
+  typeBadge: {
+    object: 'Objet',
+    field: 'Champ',
+    picklist: 'Valeur de liste de sélection',
+    layout: 'Section',
+    app: 'Application',
+  },
+  object: 'Objet',
+  allObjects: 'Tous les objets',
+  show: 'Afficher',
+  statuses: {
+    all: 'Tous les libellés',
+    missing: 'Non traduits',
+    custom: 'Traduits ici',
+    builtIn: 'Traductions intégrées',
+  },
+  search: 'Rechercher des libellés',
+  searchPlaceholder: 'Rechercher des libellés…',
+  progress: { one: '{done} sur {count} libellé traduit', other: '{done} sur {count} libellés traduits' },
+  columns: {
+    label: 'Libellé en anglais',
+    type: 'Type',
+    translation: 'Traduction ({language})',
+  },
+  translationOf: 'Traduction de « {label} »',
+  builtInHint: 'Traduction intégrée. Tapez pour la remplacer.',
+  reset: 'Supprimer la traduction',
+  noMatches: 'Aucun libellé ne correspond à ces filtres.',
+  unsaved: { one: '{count} modification non enregistrée', other: '{count} modifications non enregistrées' },
+  save: 'Enregistrer les traductions',
+  discard: 'Abandonner',
+  saved: { one: '{count} traduction enregistrée', other: '{count} traductions enregistrées' },
+} satisfies Translation['setupTranslations'];

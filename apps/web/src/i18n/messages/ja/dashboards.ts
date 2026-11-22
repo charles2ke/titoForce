@@ -1,0 +1,73 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  title: 'ダッシュボード',
+  subtitle: 'レポートグラフをまとめて表示します。各ユーザーには、アクセスできるレコードに基づく結果が表示されます。',
+  newDashboard: '新規ダッシュボード',
+
+  list: {
+    emptyTitle: 'ダッシュボードはまだありません',
+    emptyAnalyst: 'ダッシュボードを作成すると、複数のレポートグラフを 1 つのページにまとめられます。',
+    emptyViewer: 'アナリストや管理者が作成したダッシュボードがここに表示されます。',
+    noDescription: '説明なし',
+    noWidgets: 'ウィジェットはまだありません',
+    widgetCount: { other: '{count} 個のウィジェット' },
+    lastModified: '最終更新日時：{date}',
+    updated: '更新：{time}',
+  },
+
+  create: {
+    namePlaceholder: '例：営業の概要',
+    hint: '次の手順でダッシュボードにレポートを追加できます。',
+    created: 'ダッシュボード「{name}」を作成しました',
+  },
+
+  view: {
+    notFound: 'ダッシュボードが見つかりません',
+    notFoundMessage: '削除された可能性があります。',
+    backToList: 'ダッシュボード一覧に戻る',
+    loadFailed: 'このダッシュボードを読み込めませんでした。',
+    deleteDashboard: 'ダッシュボードを削除',
+    deleteTitle: 'ダッシュボードを削除しますか？',
+    deleteMessage: '「{name}」は完全に削除されます。レポートは残ります。',
+    deleteHomeOf: 'このダッシュボードは次のアプリのホームダッシュボードです：{apps}',
+    deleted: 'ダッシュボード「{name}」を削除しました',
+    dataAsOf: '{time} 時点のデータです。各ウィジェットでは、アクセスできるレコードのみが集計されます。',
+  },
+
+  editor: {
+    title: 'ダッシュボードの編集',
+    save: 'ダッシュボードを保存',
+    saved: 'ダッシュボード「{name}」を保存しました',
+    nameRequired: '名前は必須です',
+    discardTitle: '変更を破棄しますか？',
+    discardMessage: 'このダッシュボードへの変更は保存されていません。',
+    discard: '破棄',
+    app: 'アプリ',
+    appHelp: 'ダッシュボードをアプリの一覧に表示します。',
+    widgets: 'ウィジェット',
+    noWidgets: 'ウィジェットはまだありません。下でレポートを追加してください。',
+    deletedReport: '削除されたレポートです。保存時に取り除かれます。',
+    report: 'レポート',
+    loadingReport: 'レポートを読み込み中…',
+    usesReportName: 'レポート名をタイトルとして使用',
+    widgetTitle: 'ウィジェット {number} のタイトル',
+    widgetSize: 'ウィジェット {number} のサイズ',
+    moveUp: 'ウィジェット {number} を上へ移動',
+    moveDown: 'ウィジェット {number} を下へ移動',
+    remove: 'ウィジェット {number} を削除',
+    sizes: {
+      small: '小（幅 ⅓）',
+      medium: '中（幅 ⅔）',
+      full: '全幅',
+    },
+    addReport: 'レポートを追加',
+    addReportOption: 'レポートを追加…',
+    loadingReports: 'レポートを読み込み中…',
+    noReports: '利用できるレポートはありません',
+    maxWidgets: 'ウィジェットの上限（{max} 個）に達しました',
+    deletedReportsRemoved: { other: '削除された {count} 件のレポートは、保存時に取り除かれます。' },
+    layoutPreview: 'レイアウトのプレビュー',
+    smallScreens: '小さな画面では、すべてのウィジェットが全幅で表示されます。',
+  },
+} satisfies Translation['dashboards'];

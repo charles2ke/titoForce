@@ -3,6 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { CircleAlert, LayoutDashboard } from 'lucide-react';
 import { Link } from 'react-router';
 import { api } from '../api.ts';
+import { t } from '../i18n/index.ts';
+import { useObjectDef } from '../lib/hooks.ts';
+import { localizeResult } from '../lib/reports.ts';
 import { ReportChart } from './ReportChart.tsx';
 import { Card, cx, EmptyState } from './ui.tsx';
 
@@ -26,9 +29,11 @@ export function useDashboard(id: string | null | undefined) {
 const SPAN: Record<1 | 2 | 3, string> = { 1: '', 2: '@2xl:col-span-2', 3: '@lg:col-span-2 @2xl:col-span-3' };
 
 function WidgetCard({ widget }: { widget: RenderedWidget }) {
-  const { report, result } = widget;
-  const title = widget.title || report?.name || 'Report';
-  const error = widget.error ?? (report ? null : 'Report was deleted');
+  const { report } = widget;
+  const { def } = useObjectDef(report?.object);
+  const result = widget.result && report ? localizeResult(widget.result, def, report) : widget.result;
+  const title = widget.title || report?.name || t('components.dashboard.report');
+  const error = widget.error ?? (report ? null : t('components.dashboard.reportDeleted'));
   return (
     <Card
       className={cx('flex min-w-0 flex-col', SPAN[widget.size ?? 1] ?? SPAN[1])}
@@ -46,7 +51,7 @@ function WidgetCard({ widget }: { widget: RenderedWidget }) {
       {error || !report || !result ? (
         <p className="flex items-start gap-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <span className="min-w-0 break-words">{error ?? 'This report could not be loaded.'}</span>
+          <span className="min-w-0 break-words">{error ?? t('components.dashboard.loadFailed')}</span>
         </p>
       ) : (
         <ReportChart chart={report.chart} result={result} height={240} />
@@ -60,8 +65,8 @@ export function DashboardGrid({ widgets }: { widgets: RenderedWidget[] }) {
   if (!widgets.length) {
     return (
       <div className="card">
-        <EmptyState icon={LayoutDashboard} title="This dashboard has no widgets yet">
-          Add reports to the dashboard to see their charts here.
+        <EmptyState icon={LayoutDashboard} title={t('components.dashboard.emptyTitle')}>
+          {t('components.dashboard.emptyBody')}
         </EmptyState>
       </div>
     );

@@ -1,0 +1,76 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  title: 'Paneles',
+  subtitle: 'Colecciones de gráficos de informes. Cada usuario ve los resultados de los registros a los que tiene acceso.',
+  newDashboard: 'Nuevo panel',
+
+  list: {
+    emptyTitle: 'Todavía no hay paneles',
+    emptyAnalyst: 'Cree un panel para reunir varios gráficos de informes en una sola página.',
+    emptyViewer: 'Aquí aparecerán los paneles que creen los analistas y administradores.',
+    noDescription: 'Sin descripción',
+    noWidgets: 'Todavía no hay componentes',
+    widgetCount: { one: '{count} componente', other: '{count} componentes' },
+    lastModified: 'Última modificación: {date}',
+    updated: 'Actualizado {time}',
+  },
+
+  create: {
+    namePlaceholder: 'p. ej., Resumen de ventas',
+    hint: 'A continuación, podrá añadir informes al panel.',
+    created: 'Se ha creado el panel “{name}”',
+  },
+
+  view: {
+    notFound: 'Panel no encontrado',
+    notFoundMessage: 'Es posible que se haya eliminado.',
+    backToList: 'Volver a los paneles',
+    loadFailed: 'No se ha podido cargar este panel.',
+    deleteDashboard: 'Eliminar panel',
+    deleteTitle: '¿Eliminar el panel?',
+    deleteMessage: '“{name}” se eliminará de forma permanente. Sus informes se conservarán.',
+    deleteHomeOf: 'Es el panel de inicio de {apps}.',
+    deleted: 'Se ha eliminado el panel “{name}”',
+    dataAsOf: 'Datos actualizados: {time}. Cada componente solo cuenta los registros a los que usted tiene acceso.',
+  },
+
+  editor: {
+    title: 'Editar panel',
+    save: 'Guardar panel',
+    saved: 'Se ha guardado el panel “{name}”',
+    nameRequired: 'El nombre es obligatorio',
+    discardTitle: '¿Descartar los cambios?',
+    discardMessage: 'No se han guardado los cambios de este panel.',
+    discard: 'Descartar',
+    app: 'Aplicación',
+    appHelp: 'Muestra el panel en una aplicación.',
+    widgets: 'Componentes',
+    noWidgets: 'Todavía no hay componentes. Añada un informe a continuación.',
+    deletedReport: 'Informe eliminado. Se quitará al guardar.',
+    report: 'Informe',
+    loadingReport: 'Cargando informe…',
+    usesReportName: 'usa el nombre del informe como título',
+    widgetTitle: 'Título del componente {number}',
+    widgetSize: 'Tamaño del componente {number}',
+    moveUp: 'Subir el componente {number}',
+    moveDown: 'Bajar el componente {number}',
+    remove: 'Quitar el componente {number}',
+    sizes: {
+      small: 'Pequeño (⅓ del ancho)',
+      medium: 'Mediano (⅔ del ancho)',
+      full: 'Ancho completo',
+    },
+    addReport: 'Añadir un informe',
+    addReportOption: 'Añadir un informe…',
+    loadingReports: 'Cargando informes…',
+    noReports: 'No hay informes disponibles',
+    maxWidgets: 'Se ha alcanzado el máximo de {max} componentes',
+    deletedReportsRemoved: {
+      one: '{count} informe eliminado se quitará al guardar.',
+      other: '{count} informes eliminados se quitarán al guardar.',
+    },
+    layoutPreview: 'Vista previa del diseño',
+    smallScreens: 'En pantallas pequeñas, cada componente ocupa todo el ancho.',
+  },
+} satisfies Translation['dashboards'];

@@ -8,17 +8,20 @@
     "start": "node src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p .",
-    "db:reset": "node src/cli/reset.ts"
+    "db:reset": "node src/cli/reset.ts",
+    "orgs": "node src/cli/orgs.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.5",
     "@fastify/static": "^10.1.12",
+    "@fastify/websocket": "^11.3.7",
     "@titoforce/shared": "*",
     "fastify": "^5.12.8",
     "pg": "^8.23.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/pg": "^8.23.1"
+    "@types/pg": "^8.23.1",
+    "@types/ws": "^8.18.2"
   }
 }

@@ -1,34 +1,44 @@
-import { Bot, Database, History, LayoutGrid, Lock, type LucideIcon, Settings, ShieldCheck, Stamp, Users, Workflow } from 'lucide-react';
+import type { OrganizationInfo } from '@titoforce/shared';
+import { Bot, Database, FlaskConical, History, Languages, LayoutGrid, Lock, type LucideIcon, Settings, ShieldCheck, Stamp, Users, Workflow } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { Navigate, NavLink, Outlet, useLocation } from 'react-router';
 import { cx, EmptyState } from '../../components/ui.tsx';
-import { usePermissions } from '../../lib/hooks.ts';
+import { type MessageKey, t } from '../../i18n/index.ts';
+import { useAuth, usePermissions } from '../../lib/hooks.ts';
 
 type Perms = ReturnType<typeof usePermissions>;
-type Section = { id: string; label: string; icon: LucideIcon; allowed: (p: Perms) => boolean };
+type Section = { id: string; label: MessageKey; icon: LucideIcon; allowed: (p: Perms, org: OrganizationInfo) => boolean };
 
 const admin = (p: Perms) => p.isAdmin;
 const automations = (p: Perms) => p.canManageAutomations;
 
-const GROUPS: { label: string; items: Section[] }[] = [
-  { label: 'Data model', items: [{ id: 'objects', label: 'Objects & Fields', icon: Database, allowed: admin }] },
+const GROUPS: { label: MessageKey; items: Section[] }[] = [
+  { label: 'setup.nav.groups.dataModel', items: [{ id: 'objects', label: 'setup.nav.objects', icon: Database, allowed: admin }] },
   {
-    label: 'Users & access',
+    label: 'setup.nav.groups.usersAccess',
     items: [
-      { id: 'users', label: 'Users', icon: Users, allowed: admin },
-      { id: 'roles', label: 'Roles & Permissions', icon: ShieldCheck, allowed: admin },
+      { id: 'users', label: 'setup.nav.users', icon: Users, allowed: admin },
+      { id: 'roles', label: 'setup.nav.roles', icon: ShieldCheck, allowed: admin },
     ],
   },
-  { label: 'Experience', items: [{ id: 'apps', label: 'Apps', icon: LayoutGrid, allowed: admin }] },
   {
-    label: 'Automation',
+    label: 'setup.nav.groups.experience',
     items: [
-      { id: 'automations', label: 'Automations', icon: Workflow, allowed: automations },
-      { id: 'approval-processes', label: 'Approval Processes', icon: Stamp, allowed: automations },
-      { id: 'runs', label: 'Run History', icon: History, allowed: (p) => p.canManageAutomations || p.canManageAgents },
+      { id: 'apps', label: 'setup.nav.apps', icon: LayoutGrid, allowed: admin },
+      { id: 'translations', label: 'setup.nav.translations', icon: Languages, allowed: admin },
     ],
   },
-  { label: 'AI', items: [{ id: 'agents', label: 'Agents', icon: Bot, allowed: (p) => p.canManageAgents }] },
+  {
+    label: 'setup.nav.groups.automation',
+    items: [
+      { id: 'automations', label: 'setup.nav.automations', icon: Workflow, allowed: automations },
+      { id: 'approval-processes', label: 'setup.nav.approvalProcesses', icon: Stamp, allowed: automations },
+      { id: 'runs', label: 'setup.nav.runs', icon: History, allowed: (p) => p.canManageAutomations || p.canManageAgents },
+    ],
+  },
+  { label: 'setup.nav.groups.ai', items: [{ id: 'agents', label: 'setup.nav.agents', icon: Bot, allowed: (p) => p.canManageAgents }] },
+  // Sandboxes are managed from production, never from inside a sandbox.
+  { label: 'setup.nav.groups.environments', items: [{ id: 'sandboxes', label: 'setup.nav.sandboxes', icon: FlaskConical, allowed: (p, org) => p.isAdmin && org.kind === 'production' }] },
 ];
 
 const SECTIONS = GROUPS.flatMap((g) => g.items);
@@ -37,8 +47,8 @@ function NoAccess() {
   return (
     <div className="mx-auto max-w-3xl p-6">
       <div className="card">
-        <EmptyState icon={Lock} title="You don’t have access to this area">
-          This part of Setup requires additional permissions. Ask an administrator to update your role if you need it.
+        <EmptyState icon={Lock} title={t('setup.noAccess.title')}>
+          {t('setup.noAccess.message')}
         </EmptyState>
       </div>
     </div>
@@ -47,9 +57,10 @@ function NoAccess() {
 
 export default function SetupLayout() {
   const perms = usePermissions();
+  const { organization } = useAuth();
   const { pathname } = useLocation();
   const current = SECTIONS.find((s) => s.id === pathname.split('/')[2]);
-  const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter((s) => s.allowed(perms)) })).filter((g) => g.items.length > 0);
+  const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter((s) => s.allowed(perms, organization)) })).filter((g) => g.items.length > 0);
   const hasNav = groups.length > 0;
   const navRef = useRef<HTMLElement>(null);
 
@@ -77,12 +88,12 @@ export default function SetupLayout() {
           <div className="p-3 @4xl:sticky @4xl:top-0 @4xl:p-4">
             <div className="mb-2 hidden items-center gap-2 px-2 text-sm font-semibold text-slate-900 @4xl:flex">
               <Settings className="size-4 text-slate-500" aria-hidden />
-              Setup
+              {t('setup.title')}
             </div>
-            <nav ref={navRef} aria-label="Setup" className="flex gap-1 overflow-x-auto @4xl:block @4xl:space-y-4 @4xl:overflow-visible">
+            <nav ref={navRef} aria-label={t('setup.title')} className="flex gap-1 overflow-x-auto @4xl:block @4xl:space-y-4 @4xl:overflow-visible">
               {groups.map((g) => (
                 <div key={g.label} className="flex shrink-0 gap-1 @4xl:block @4xl:space-y-0.5">
-                  <p className="hidden px-2 pb-1 text-[11px] font-semibold tracking-wide text-slate-400 uppercase @4xl:block">{g.label}</p>
+                  <p className="hidden px-2 pb-1 text-[11px] font-semibold tracking-wide text-slate-400 uppercase @4xl:block">{t(g.label)}</p>
                   {g.items.map((s) => (
                     <NavLink
                       key={s.id}
@@ -95,7 +106,7 @@ export default function SetupLayout() {
                       }
                     >
                       <s.icon className="size-4 shrink-0 opacity-80" aria-hidden />
-                      {s.label}
+                      {t(s.label)}
                     </NavLink>
                   ))}
                 </div>
@@ -104,7 +115,7 @@ export default function SetupLayout() {
           </div>
         </aside>
       )}
-      <div className="@container min-w-0 flex-1">{current && !current.allowed(perms) ? <NoAccess /> : <Outlet />}</div>
+      <div className="@container min-w-0 flex-1">{current && !current.allowed(perms, organization) ? <NoAccess /> : <Outlet />}</div>
     </div>
   );
 }
@@ -112,7 +123,8 @@ export default function SetupLayout() {
 /** /setup → the first section the user may open. */
 export function SetupIndex() {
   const perms = usePermissions();
-  const first = SECTIONS.find((s) => s.allowed(perms));
+  const { organization } = useAuth();
+  const first = SECTIONS.find((s) => s.allowed(perms, organization));
   if (first) return <Navigate to={`/setup/${first.id}`} replace />;
   return <NoAccess />;
 }

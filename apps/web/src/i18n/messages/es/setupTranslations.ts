@@ -1,0 +1,50 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  title: 'Traducciones',
+  subtitle:
+    'Traduzca las etiquetas de objetos, campos, valores de listas de selección, secciones de formatos de página y aplicaciones. Los usuarios las ven en el idioma en el que usan titoForce.',
+  englishBase: 'Las etiquetas se definen en inglés. Para cambiar una etiqueta en inglés, edítela donde se define en Configuración.',
+  language: 'Idioma',
+  type: 'Tipo',
+  types: {
+    all: 'Todos los tipos',
+    object: 'Objetos',
+    field: 'Campos',
+    picklist: 'Valores de listas de selección',
+    layout: 'Secciones de formatos de página',
+    app: 'Aplicaciones',
+  },
+  typeBadge: {
+    object: 'Objeto',
+    field: 'Campo',
+    picklist: 'Valor de lista de selección',
+    layout: 'Sección',
+    app: 'Aplicación',
+  },
+  object: 'Objeto',
+  allObjects: 'Todos los objetos',
+  show: 'Mostrar',
+  statuses: {
+    all: 'Todas las etiquetas',
+    missing: 'Sin traducir',
+    custom: 'Traducidas aquí',
+    builtIn: 'Traducciones integradas',
+  },
+  search: 'Buscar etiquetas',
+  searchPlaceholder: 'Buscar etiquetas…',
+  progress: { one: '{done} de {count} etiqueta traducida', other: '{done} de {count} etiquetas traducidas' },
+  columns: {
+    label: 'Etiqueta en inglés',
+    type: 'Tipo',
+    translation: 'Traducción ({language})',
+  },
+  translationOf: 'Traducción de “{label}”',
+  builtInHint: 'Traducción integrada. Escriba para sustituirla.',
+  reset: 'Quitar traducción',
+  noMatches: 'Ninguna etiqueta coincide con estos filtros.',
+  unsaved: { one: '{count} cambio sin guardar', other: '{count} cambios sin guardar' },
+  save: 'Guardar traducciones',
+  discard: 'Descartar',
+  saved: { one: 'Se ha guardado {count} traducción', other: 'Se han guardado {count} traducciones' },
+} satisfies Translation['setupTranslations'];

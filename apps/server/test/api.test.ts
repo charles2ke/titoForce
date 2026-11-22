@@ -148,6 +148,36 @@ describe('records API', () => {
     });
     expect(res.json()).toMatchObject({ done: 1, errors: [{ id: other }] });
   });
+
+  it('refuses edits that would overwrite changes saved since the record was opened, and merges the rest', async () => {
+    const created = await app.inject({ method: 'POST', url: '/api/records/account', headers: { cookie: james, ...JSON_HEADERS }, payload: { fields: { name: 'Conflict Co', industry: 'Technology' } } });
+    const opened = created.json().record as { id: string; updatedAt: string };
+    const save = (cookie: string, fields: Record<string, unknown>, expectedUpdatedAt: string | null = opened.updatedAt) =>
+      app.inject({
+        method: 'PATCH',
+        url: `/api/records/account/${opened.id}`,
+        headers: { cookie, ...JSON_HEADERS },
+        payload: { fields, ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}) },
+      });
+
+    expect((await save(maria, { industry: 'Retail' })).statusCode).toBe(200);
+    const conflict = await save(james, { industry: 'Healthcare', phone: '555-0100' });
+    expect(conflict.statusCode).toBe(409);
+    const { error } = conflict.json();
+    expect(error).toMatchObject({ code: 'edit_conflict', details: { fields: [{ apiName: 'industry', label: 'Industry', value: 'Retail', by: 'Maria Garcia' }] } });
+    expect(error.details.fields).toHaveLength(1);
+
+    // Fields nobody else changed are saved without a conflict, keeping Maria's change.
+    const merged = await save(james, { phone: '555-0100' });
+    expect(merged.statusCode, merged.body).toBe(200);
+    expect(merged.json().record.fields).toMatchObject({ industry: 'Retail', phone: '555-0100' });
+    // After reviewing, James saves on top of the version the conflict reported.
+    const retried = await save(james, { industry: 'Healthcare' }, error.details.updatedAt);
+    expect(retried.statusCode, retried.body).toBe(200);
+    expect(retried.json().record.fields.industry).toBe('Healthcare');
+    // Without expectedUpdatedAt the last save wins, as before.
+    expect((await save(maria, { industry: 'Retail' }, null)).statusCode).toBe(200);
+  });
 });
 
 describe('web app hosting', () => {

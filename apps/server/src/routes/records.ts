@@ -2,10 +2,11 @@ import type { CrmRecord, RecordQuery, RecordResponse } from '@titoforce/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prepareCsvImport } from '../platform/csv-import.ts';
+import { relatedListOptions } from '../platform/layouts.ts';
 import { assertCanCreate, type Principal } from '../platform/principal.ts';
 import type { Services } from '../services.ts';
 import { AppError, badRequest, isoDate } from '../util.ts';
-import { params, parse, principalOf, query, sendDownload } from './http.ts';
+import { auth, localeOf, params, parse, principalOf, query, sendDownload } from './http.ts';
 import * as schemas from './schemas.ts';
 
 const bulk = z.discriminatedUnion('action', [
@@ -103,7 +104,7 @@ export function recordRoutes(app: FastifyInstance, s: Services): void {
     const p = principalOf(req);
     const { object, id } = params(req);
     const body = parse(schemas.recordWrite, req.body);
-    return withRefs(p, await s.records.update(p, object!, id!, body.fields, { allowDuplicates: body.allowDuplicates }));
+    return withRefs(p, await s.records.update(p, object!, id!, body.fields, { allowDuplicates: body.allowDuplicates, expectedUpdatedAt: body.expectedUpdatedAt }));
   });
 
   app.delete('/api/records/:object/:id', async (req) => {
@@ -111,9 +112,14 @@ export function recordRoutes(app: FastifyInstance, s: Services): void {
     return s.records.delete(principalOf(req), object!, id!);
   });
 
+  /** Related lists of the user's page layout, in its order, labelled in the user's language. */
   app.get('/api/records/:object/:id/related', async (req) => {
     const { object, id } = params(req);
-    return s.records.related(principalOf(req), object!, id!);
+    const layout = await s.layouts.forRole(object!, auth(req).user.roleId);
+    const tr = await s.translations.translator(localeOf(req));
+    const options = new Map(relatedListOptions(s.metadata, object!, (d) => tr.object(d)).map((o) => [o.id, o]));
+    const lists = layout.relatedLists.flatMap((listId) => options.get(listId) ?? []);
+    return s.records.related(principalOf(req), object!, id!, lists);
   });
 
   app.get('/api/records/:object/:id/timeline', async (req) => {

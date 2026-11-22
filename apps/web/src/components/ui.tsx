@@ -2,6 +2,7 @@ import { LoaderCircle, type LucideIcon, X } from 'lucide-react';
 import { type ButtonHTMLAttributes, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { errorMessage } from '../api.ts';
+import { t } from '../i18n/index.ts';
 import { badgeClass, softTileClass, tileClass } from '../lib/colors.ts';
 import { initials } from '../lib/format.ts';
 import { Icon } from '../lib/icons.tsx';
@@ -59,10 +60,10 @@ export function Badge({ color, children, className }: { color?: string | null; c
 }
 
 export function Spinner({ className }: { className?: string }) {
-  return <LoaderCircle className={cx('size-5 animate-spin text-slate-400', className)} aria-label="Loading" />;
+  return <LoaderCircle className={cx('size-5 animate-spin text-slate-400', className)} aria-label={t('components.spinner')} />;
 }
 
-export function Loading({ label = 'Loading…' }: { label?: string }) {
+export function Loading({ label = t('common.loading') }: { label?: string }) {
   return (
     <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500">
       <Spinner /> {label}
@@ -153,7 +154,7 @@ export function FormField({ label, required, help, error, children, className, h
             <span className="ml-0.5 text-rose-500" aria-hidden>
               *
             </span>
-            <span className="sr-only"> (required)</span>
+            <span className="sr-only"> {t('components.requiredSuffix')}</span>
           </>
         )}
       </label>
@@ -184,7 +185,7 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
 
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: ReactNode }[]; value: T; onChange: (v: T) => void }) {
   return (
-    <div role="tablist" className="flex gap-1 border-b border-slate-200">
+    <div role="tablist" className="flex gap-1 overflow-x-auto shadow-[inset_0_-1px_0_var(--color-slate-200)]">
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -192,7 +193,7 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: 
           type="button"
           aria-selected={value === t.id}
           onClick={() => onChange(t.id)}
-          className={cx('-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors', value === t.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800')}
+          className={cx('shrink-0 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors', value === t.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800')}
         >
           {t.label}
         </button>
@@ -237,13 +238,13 @@ export function Modal({
   if (!open) return null;
   const width = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl' }[size];
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 pt-[8vh] backdrop-blur-[1px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 px-[max(1rem,var(--safe-left),var(--safe-right))] pt-[max(8vh,var(--safe-top))] pb-[max(1rem,var(--safe-bottom))] backdrop-blur-[1px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className={cx('w-full animate-fade-in rounded-2xl bg-white shadow-2xl outline-none', width)}>
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
           <h2 id={titleId} className="text-base font-semibold text-slate-900">
             {title}
           </h2>
-          <IconButton icon={X} label="Close" onClick={onClose} />
+          <IconButton icon={X} label={t('common.close')} onClick={onClose} />
         </div>
         <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
         {footer && <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/60 px-5 py-3 rounded-b-2xl">{footer}</div>}
@@ -307,15 +308,13 @@ export function Pagination({ page, pageSize, total, onPage }: { page: number; pa
   const to = Math.min(total, page * pageSize);
   return (
     <div className="flex items-center justify-between px-4 py-3 text-sm text-slate-500">
-      <span>
-        {from.toLocaleString()}–{to.toLocaleString()} of {total.toLocaleString()}
-      </span>
+      <span>{t('components.pagination.range', { from, to, total })}</span>
       <div className="flex gap-2">
         <Button size="sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-          Previous
+          {t('common.previous')}
         </Button>
         <Button size="sm" disabled={page >= pages} onClick={() => onPage(page + 1)}>
-          Next
+          {t('common.next')}
         </Button>
       </div>
     </div>

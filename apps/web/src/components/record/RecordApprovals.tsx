@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ShieldCheck, ThumbsDown, ThumbsUp, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 import { api, errorMessage } from '../../api.ts';
+import { t, tx } from '../../i18n/index.ts';
 import { formatDateTime, relativeTime } from '../../lib/format.ts';
 import { invalidateRecordData, useAuth, usePermissions } from '../../lib/hooks.ts';
 import { useToast } from '../feedback.tsx';
@@ -35,7 +36,7 @@ export function DecisionModal({ request, decision, onClose }: { request: Approva
     mutationFn: () => api.post<ApprovalRequest>(`/api/approvals/${request.id}/${decision}`, { comment: comment.trim() || undefined }),
     onSuccess: async () => {
       await invalidateRecordData(qc);
-      toast.success(decision === 'approve' ? `Approved “${request.recordName}”` : `Rejected “${request.recordName}”`);
+      toast.success(t(decision === 'approve' ? 'record.approvals.approvedRecord' : 'record.approvals.rejectedRecord', { name: request.recordName }));
       onClose();
     },
   });
@@ -44,12 +45,12 @@ export function DecisionModal({ request, decision, onClose }: { request: Approva
       open
       onClose={onClose}
       size="sm"
-      title={decision === 'approve' ? 'Approve request' : 'Reject request'}
+      title={t(decision === 'approve' ? 'record.approvals.approveTitle' : 'record.approvals.rejectTitle')}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant={decision === 'approve' ? 'primary' : 'danger'} loading={decide.isPending} onClick={() => decide.mutate()}>
-            {decision === 'approve' ? 'Approve' : 'Reject'}
+            {t(decision === 'approve' ? 'record.approvals.approve' : 'record.approvals.reject')}
           </Button>
         </>
       }
@@ -58,11 +59,11 @@ export function DecisionModal({ request, decision, onClose }: { request: Approva
         <p className="text-sm text-slate-600">
           <span className="font-medium text-slate-900">{request.recordName}</span> · {request.processName}
           <br />
-          Submitted by {request.submittedByName} {relativeTime(request.createdAt)}
-          {request.comment && <span className="mt-1 block text-slate-500 italic">“{request.comment}”</span>}
+          {t('record.approvals.submittedBy', { name: request.submittedByName, time: relativeTime(request.createdAt) })}
+          {request.comment && <span className="mt-1 block text-slate-500 italic">{t('record.approvals.quote', { comment: request.comment })}</span>}
         </p>
         <ErrorBanner error={decide.error} />
-        <FormField label="Comment" htmlFor="decision-comment" help="Optional. Shared with the submitter.">
+        <FormField label={t('record.approvals.comment')} htmlFor="decision-comment" help={t('record.approvals.decisionCommentHelp')}>
           <textarea id="decision-comment" className="input min-h-20" maxLength={2000} value={comment} onChange={(e) => setComment(e.target.value)} />
         </FormField>
       </div>
@@ -79,7 +80,7 @@ export function SubmitApprovalModal({ record, processes, onClose }: { record: Cr
     mutationFn: () => api.post<ApprovalRequest>('/api/approvals/submit', { recordId: record.id, processId: processId || undefined, comment: comment.trim() || undefined }),
     onSuccess: async (req) => {
       await invalidateRecordData(qc);
-      toast.success(`Submitted to ${req.approverName} for approval`);
+      toast.success(t('record.approvals.submitted', { name: req.approverName }));
       onClose();
     },
   });
@@ -88,12 +89,12 @@ export function SubmitApprovalModal({ record, processes, onClose }: { record: Cr
       open
       onClose={onClose}
       size="sm"
-      title="Submit for approval"
+      title={t('record.approvals.submit')}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" loading={submit.isPending} onClick={() => submit.mutate()}>
-            Submit
+            {t('common.submit')}
           </Button>
         </>
       }
@@ -101,9 +102,9 @@ export function SubmitApprovalModal({ record, processes, onClose }: { record: Cr
       <div className="space-y-3">
         <ErrorBanner error={submit.error} />
         {processes.length > 1 && (
-          <FormField label="Approval process" htmlFor="approval-process">
+          <FormField label={t('record.approvals.processLabel')} htmlFor="approval-process">
             <select id="approval-process" className="input" value={processId} onChange={(e) => setProcessId(e.target.value)}>
-              <option value="">Automatic (first process whose criteria match)</option>
+              <option value="">{t('record.approvals.automaticProcess')}</option>
               {processes.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -114,11 +115,11 @@ export function SubmitApprovalModal({ record, processes, onClose }: { record: Cr
         )}
         {processes.length === 1 && (
           <p className="text-sm text-slate-600">
-            Process: <span className="font-medium text-slate-900">{processes[0]!.name}</span>
+            {tx('record.approvals.process', { name: <span className="font-medium text-slate-900">{processes[0]!.name}</span> })}
             {processes[0]!.description && <span className="block text-xs text-slate-500">{processes[0]!.description}</span>}
           </p>
         )}
-        <FormField label="Comment" htmlFor="approval-comment" help="Optional. The approver sees this with the request.">
+        <FormField label={t('record.approvals.comment')} htmlFor="approval-comment" help={t('record.approvals.submitCommentHelp')}>
           <textarea id="approval-comment" className="input min-h-20" maxLength={2000} value={comment} onChange={(e) => setComment(e.target.value)} />
         </FormField>
       </div>
@@ -139,7 +140,7 @@ export function ApprovalsCard({ def, record }: { def: ObjectDef; record: CrmReco
     mutationFn: (id: string) => api.post(`/api/approvals/${id}/recall`, {}),
     onSuccess: async () => {
       await invalidateRecordData(qc);
-      toast.success('Request recalled');
+      toast.success(t('record.approvals.recalledToast'));
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
@@ -152,42 +153,40 @@ export function ApprovalsCard({ def, record }: { def: ObjectDef; record: CrmReco
     <Card
       title={
         <span className="flex items-center gap-2">
-          <ShieldCheck className="size-4 text-slate-400" aria-hidden /> Approvals
+          <ShieldCheck className="size-4 text-slate-400" aria-hidden /> {t('record.approvals.title')}
         </span>
       }
       actions={
         !pending &&
         active.length > 0 && (
           <Button size="sm" onClick={() => setSubmitting(true)}>
-            Submit for approval
+            {t('record.approvals.submit')}
           </Button>
         )
       }
     >
       <ErrorBanner error={requests.error} />
       {pending && (
-        <div className="rounded-lg bg-amber-50 p-3 ring-1 ring-amber-200" aria-label="Pending approval">
+        <div className="rounded-lg bg-amber-50 p-3 ring-1 ring-amber-200" aria-label={t('record.approvals.pendingLabel')}>
           <p className="text-sm text-amber-900">
-            <span className="font-medium">Waiting on {pending.approverId === user.id ? 'you' : pending.approverName}</span> · {pending.processName}
+            <span className="font-medium">{pending.approverId === user.id ? t('record.approvals.waitingOnYou') : t('record.approvals.waitingOn', { name: pending.approverName })}</span> · {pending.processName}
           </p>
-          <p className="mt-0.5 text-xs text-amber-800/80">
-            Submitted by {pending.submittedByName} {relativeTime(pending.createdAt)}
-          </p>
-          {pending.comment && <p className="mt-1 text-sm text-amber-900 italic">“{pending.comment}”</p>}
+          <p className="mt-0.5 text-xs text-amber-800/80">{t('record.approvals.submittedBy', { name: pending.submittedByName, time: relativeTime(pending.createdAt) })}</p>
+          {pending.comment && <p className="mt-1 text-sm text-amber-900 italic">{t('record.approvals.quote', { comment: pending.comment })}</p>}
           <div className="mt-2 flex flex-wrap gap-2">
             {(pending.approverId === user.id || perms.isAdmin) && (
               <>
                 <Button size="sm" variant="primary" icon={ThumbsUp} onClick={() => setDeciding({ request: pending, decision: 'approve' })}>
-                  Approve
+                  {t('record.approvals.approve')}
                 </Button>
                 <Button size="sm" variant="danger" icon={ThumbsDown} onClick={() => setDeciding({ request: pending, decision: 'reject' })}>
-                  Reject
+                  {t('record.approvals.reject')}
                 </Button>
               </>
             )}
             {(pending.submittedBy === user.id || perms.isAdmin) && (
               <Button size="sm" icon={Undo2} loading={recall.isPending} onClick={() => recall.mutate(pending.id)}>
-                Recall
+                {t('record.approvals.recall')}
               </Button>
             )}
           </div>
@@ -199,17 +198,17 @@ export function ApprovalsCard({ def, record }: { def: ObjectDef; record: CrmReco
             <li key={r.id} className="py-2 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="min-w-0 truncate text-slate-700">{r.processName}</span>
-                <Badge color={STATUS_COLOR[r.status]}>{r.status}</Badge>
+                <Badge color={STATUS_COLOR[r.status]}>{t(`record.approvals.status.${r.status}`)}</Badge>
               </div>
               <p className="text-xs text-slate-500" title={formatDateTime(r.decidedAt ?? r.createdAt)}>
-                {r.status === 'recalled' ? 'Recalled' : r.approverName} · {relativeTime(r.decidedAt ?? r.createdAt)}
+                {r.status === 'recalled' ? t('record.approvals.recalled') : r.approverName} · {relativeTime(r.decidedAt ?? r.createdAt)}
               </p>
-              {r.decisionComment && <p className="mt-0.5 text-xs text-slate-600 italic">“{r.decisionComment}”</p>}
+              {r.decisionComment && <p className="mt-0.5 text-xs text-slate-600 italic">{t('record.approvals.quote', { comment: r.decisionComment })}</p>}
             </li>
           ))}
         </ul>
       )}
-      {!pending && !past.length && <p className="text-sm text-slate-400">Not submitted yet.</p>}
+      {!pending && !past.length && <p className="text-sm text-slate-400">{t('record.approvals.notSubmitted')}</p>}
       {deciding && <DecisionModal request={deciding.request} decision={deciding.decision} onClose={() => setDeciding(null)} />}
       {submitting && <SubmitApprovalModal record={record} processes={active} onClose={() => setSubmitting(false)} />}
     </Card>

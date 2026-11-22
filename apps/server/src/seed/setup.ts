@@ -417,7 +417,8 @@ const DASHBOARDS: { app: string; name: string; description: string; widgets: [st
 const page = (p: 'home' | 'forecast' | 'org-chart' | 'reports', label: string, icon: string): AppNavItem => ({ type: 'page', page: p, label, icon });
 const object = (o: string, label?: string): AppNavItem => ({ type: 'object', object: o, label });
 
-const APPS: { id: string; name: string; description: string; icon: string; color: string; nav: AppNavItem[] }[] = [
+/** Apps every organization starts with (their labels have built-in translations). */
+export const STANDARD_APPS: { id: string; name: string; description: string; icon: string; color: string; nav: AppNavItem[] }[] = [
   {
     id: 'sales',
     name: 'Sales',
@@ -564,7 +565,7 @@ export async function seedConfiguration(s: Services, admin: Principal, approvers
     dashboards[d.app] = created.id;
   }
   let order = 1;
-  for (const app of APPS) await s.apps.save(admin, { ...app, dashboardId: dashboards[app.id] ?? null, sortOrder: order++ });
+  for (const app of STANDARD_APPS) await s.apps.save(admin, { ...app, dashboardId: dashboards[app.id] ?? null, sortOrder: order++ });
   const views: ListViewDef[] = [];
   for (const view of listViews()) views.push(await s.views.create(admin, view));
   return { processes, reports: byKey, dashboards, views };

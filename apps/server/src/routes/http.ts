@@ -1,7 +1,10 @@
-import type { RolePermissions, UserDTO } from '@titoforce/shared';
+import type { LocaleCode, RolePermissions, UserDTO } from '@titoforce/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import type { Principal } from '../platform/principal.ts';
+import { isSupportedLocale } from '../platform/translations.ts';
+import type { TenantContext } from '../tenancy/context.ts';
+import type { Tenant } from '../tenancy/control.ts';
 import { AppError, badRequest } from '../util.ts';
 
 export interface AuthContext {
@@ -14,6 +17,11 @@ export interface AuthContext {
 declare module 'fastify' {
   interface FastifyRequest {
     auth: AuthContext | null;
+    /** Organization handling an API request (set before any route runs). */
+    tenant: Tenant | null;
+    tenantContext: TenantContext | null;
+    /** How the organization was chosen: `x-tito-org` header or `?org=`, subdomain, session token, or the default. */
+    tenantSource: 'explicit' | 'host' | 'token' | 'default' | null;
   }
   interface FastifyContextConfig {
     /** Route is reachable without a session. */
@@ -23,12 +31,30 @@ declare module 'fastify' {
 
 export const SESSION_COOKIE = 'tf_session';
 
+/** Each organization has its own session cookie, so one browser can stay signed in to several (e.g. a sandbox). */
+export const sessionCookieName = (tenantId: string): string => (tenantId === 'default' ? SESSION_COOKIE : `${SESSION_COOKIE}_${tenantId}`);
+
 export function auth(req: FastifyRequest): AuthContext {
   if (!req.auth) throw new AppError(401, 'unauthenticated', 'Please sign in');
   return req.auth;
 }
 
+export function tenantOf(req: FastifyRequest): Tenant {
+  if (!req.tenant) throw new Error('No organization resolved for this request');
+  return req.tenant;
+}
+
 export const principalOf = (req: FastifyRequest): Principal => auth(req).principal;
+
+/** Language of metadata labels in responses: the UI's (`x-tito-locale`), else the user's preference, else English. `?raw=1` asks for English (Setup). */
+export function localeOf(req: FastifyRequest): LocaleCode {
+  if ((req.query as Record<string, unknown> | undefined)?.raw === '1') return 'en';
+  const header = req.headers['x-tito-locale'];
+  const requested = Array.isArray(header) ? header[0] : header;
+  if (isSupportedLocale(requested)) return requested;
+  const preferred = req.auth?.user.locale;
+  return isSupportedLocale(preferred) ? preferred : 'en';
+}
 
 export function parse<T>(schema: z.ZodType<T>, data: unknown): T {
   const result = schema.safeParse(data ?? {});

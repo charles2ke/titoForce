@@ -58,6 +58,6 @@ for (const viewport of [
     // With the panel docked the Setup nav turns into a sideways-scrolling tab bar; the current section's tab stays in view.
     await expect(page.getByRole('navigation', { name: 'Setup' }).getByRole('link', { name: 'Agents' })).toBeInViewport({ ratio: 1 });
     await expectFits(page, '/setup/roles');
-    await expectFits(page, '/setup/objects/opportunity', () => page.getByRole('tab', { name: 'Layout & behavior' }).click());
+    await expectFits(page, '/setup/objects/opportunity', () => page.getByRole('tab', { name: 'Details & behavior' }).click());
   });
 }

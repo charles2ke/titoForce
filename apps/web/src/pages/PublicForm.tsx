@@ -4,6 +4,7 @@ import { type FormEvent, useState } from 'react';
 import { useParams } from 'react-router';
 import { api } from '../api.ts';
 import { Button, ErrorBanner, FormField, Loading } from '../components/ui.tsx';
+import { t } from '../i18n/index.ts';
 
 interface PublicField {
   apiName: string;
@@ -30,7 +31,7 @@ function Input({ field, value, onChange }: { field: PublicField; value: unknown;
     case 'picklist':
       return (
         <select {...common} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Select…</option>
+          <option value="">{t('publicForm.select')}</option>
           {field.options?.map((o) => (
             <option key={o} value={o}>
               {o}
@@ -65,7 +66,7 @@ export default function PublicForm() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-indigo-50 to-slate-50 px-4 py-12">
+    <div className="min-h-full bg-gradient-to-b from-indigo-50 to-slate-50 px-4 py-12">
       <div className="mx-auto max-w-lg">
         {form.isLoading && <Loading />}
         {form.error && <ErrorBanner error={form.error} />}
@@ -88,14 +89,14 @@ export default function PublicForm() {
                     </FormField>
                   ))}
                   <Button type="submit" variant="primary" className="w-full" loading={submit.isPending}>
-                    {form.data.submitLabel || 'Submit'}
+                    {form.data.submitLabel || t('common.submit')}
                   </Button>
                 </form>
               </>
             )}
           </div>
         )}
-        <p className="mt-6 text-center text-xs text-slate-400">Powered by titoForce</p>
+        <p className="mt-6 text-center text-xs text-slate-400">{t('publicForm.poweredBy')}</p>
       </div>
     </div>
   );

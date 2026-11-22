@@ -1,5 +1,6 @@
 import { CircleAlert, CircleCheck, X } from 'lucide-react';
 import { createContext, type ReactNode, useCallback, useContext, useRef, useState } from 'react';
+import { t } from '../i18n/index.ts';
 import { Button, cx, Modal } from './ui.tsx';
 
 type Toast = { id: number; kind: 'success' | 'error'; message: string };
@@ -22,8 +23,8 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
   const push = useCallback((kind: Toast['kind'], message: string) => {
     const id = next.current++;
-    setToasts((t) => [...t.slice(-3), { id, kind, message }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'error' ? 7000 : 3500);
+    setToasts((all) => [...all.slice(-3), { id, kind, message }]);
+    setTimeout(() => setToasts((all) => all.filter((x) => x.id !== id)), kind === 'error' ? 7000 : 3500);
   }, []);
 
   const ask = useCallback((o: ConfirmOptions) => new Promise<boolean>((resolve) => setConfirm({ ...o, resolve })), []);
@@ -36,12 +37,12 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={push}>
       <ConfirmContext.Provider value={ask}>
         {children}
-        <div aria-live="polite" className="pointer-events-none fixed right-4 bottom-4 z-[60] flex w-80 flex-col gap-2">
-          {toasts.map((t) => (
-            <div key={t.id} role={t.kind === 'error' ? 'alert' : 'status'} className={cx('pointer-events-auto flex animate-slide-in items-start gap-2 rounded-xl border bg-white px-3 py-2.5 text-sm shadow-lg', t.kind === 'error' ? 'border-rose-200' : 'border-emerald-200')}>
-              {t.kind === 'error' ? <CircleAlert className="mt-0.5 size-4 shrink-0 text-rose-500" /> : <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-500" />}
-              <span className="flex-1 text-slate-700">{t.message}</span>
-              <button type="button" aria-label="Dismiss" onClick={() => setToasts((all) => all.filter((x) => x.id !== t.id))} className="text-slate-400 hover:text-slate-600">
+        <div aria-live="polite" className="pointer-events-none fixed right-[max(1rem,var(--safe-right))] bottom-[max(1rem,var(--safe-bottom))] z-[60] flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">
+          {toasts.map((toast) => (
+            <div key={toast.id} role={toast.kind === 'error' ? 'alert' : 'status'} className={cx('pointer-events-auto flex animate-slide-in items-start gap-2 rounded-xl border bg-white px-3 py-2.5 text-sm shadow-lg', toast.kind === 'error' ? 'border-rose-200' : 'border-emerald-200')}>
+              {toast.kind === 'error' ? <CircleAlert className="mt-0.5 size-4 shrink-0 text-rose-500" /> : <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-500" />}
+              <span className="flex-1 text-slate-700">{toast.message}</span>
+              <button type="button" aria-label={t('common.dismiss')} onClick={() => setToasts((all) => all.filter((x) => x.id !== toast.id))} className="text-slate-400 hover:text-slate-600">
                 <X className="size-4" />
               </button>
             </div>
@@ -54,9 +55,9 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
           size="sm"
           footer={
             <>
-              <Button onClick={() => settle(false)}>Cancel</Button>
+              <Button onClick={() => settle(false)}>{t('common.cancel')}</Button>
               <Button variant={confirm?.danger ? 'danger' : 'primary'} onClick={() => settle(true)}>
-                {confirm?.confirmLabel ?? 'Confirm'}
+                {confirm?.confirmLabel ?? t('common.confirm')}
               </Button>
             </>
           }

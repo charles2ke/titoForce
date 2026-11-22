@@ -61,6 +61,22 @@ export function useApps() {
   return useQuery({ queryKey: ['apps'], queryFn: () => api.get<AppDef[]>('/api/apps'), staleTime: 5 * 60_000 });
 }
 
+// Setup edits the English originals: these load metadata without translating labels into the UI language, so saving a
+// form never writes a translation back as the base label.
+
+export function useSetupObjects() {
+  return useQuery({ queryKey: ['objects', 'raw'], queryFn: () => api.get<ObjectDef[]>('/api/objects?raw=1'), staleTime: 5 * 60_000 });
+}
+
+export function useSetupObjectDef(api: string | undefined): { def: ObjectDef | undefined; isLoading: boolean; error: unknown } {
+  const q = useSetupObjects();
+  return { def: api ? q.data?.find((o) => o.apiName === api) : undefined, isLoading: q.isLoading, error: q.error };
+}
+
+export function useSetupApps() {
+  return useQuery({ queryKey: ['apps', 'raw'], queryFn: () => api.get<AppDef[]>('/api/apps?raw=1'), staleTime: 5 * 60_000 });
+}
+
 export function useUsers() {
   return useQuery({ queryKey: ['users'], queryFn: () => api.get<UserDTO[]>('/api/users'), staleTime: 5 * 60_000 });
 }
@@ -81,7 +97,8 @@ export function invalidateRecordData(qc: QueryClient): Promise<void> {
 
 /** Refreshes metadata after setup changes. */
 export function invalidateMetadata(qc: QueryClient): Promise<void> {
-  return Promise.all(['objects', 'apps', 'views', 'users', 'roles'].map((k) => qc.invalidateQueries({ queryKey: [k] }))).then(() => undefined);
+  // Page layouts follow field changes: the server places new fields and drops deleted ones.
+  return Promise.all(['objects', 'apps', 'views', 'users', 'roles', 'layout', 'layouts'].map((k) => qc.invalidateQueries({ queryKey: [k] }))).then(() => undefined);
 }
 
 // ---------- current app (Salesforce-style app switcher) ----------

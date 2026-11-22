@@ -1,0 +1,50 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  title: '翻訳',
+  subtitle:
+    'オブジェクト、項目、選択リスト値、ページレイアウトのセクション、アプリの表示ラベルを翻訳します。ユーザーには、titoForce で使用している言語の表示ラベルが表示されます。',
+  englishBase: '表示ラベルは英語で定義されます。英語の表示ラベルを変更するには、設定内の定義元で名前を変更してください。',
+  language: '言語',
+  type: '種別',
+  types: {
+    all: 'すべての種別',
+    object: 'オブジェクト',
+    field: '項目',
+    picklist: '選択リスト値',
+    layout: 'ページレイアウトのセクション',
+    app: 'アプリ',
+  },
+  typeBadge: {
+    object: 'オブジェクト',
+    field: '項目',
+    picklist: '選択リスト値',
+    layout: 'セクション',
+    app: 'アプリ',
+  },
+  object: 'オブジェクト',
+  allObjects: 'すべてのオブジェクト',
+  show: '表示',
+  statuses: {
+    all: 'すべての表示ラベル',
+    missing: '未翻訳',
+    custom: 'この組織で翻訳済み',
+    builtIn: '組み込みの翻訳',
+  },
+  search: '表示ラベルを検索',
+  searchPlaceholder: '表示ラベルを検索…',
+  progress: { other: '表示ラベル {count} 個中 {done} 個が翻訳済み' },
+  columns: {
+    label: '英語の表示ラベル',
+    type: '種別',
+    translation: '翻訳（{language}）',
+  },
+  translationOf: '「{label}」の翻訳',
+  builtInHint: '組み込みの翻訳です。入力すると置き換えられます。',
+  reset: '翻訳を削除',
+  noMatches: 'フィルター条件に一致する表示ラベルはありません。',
+  unsaved: { other: '未保存の変更 {count} 件' },
+  save: '翻訳を保存',
+  discard: '破棄',
+  saved: { other: '{count} 件の翻訳を保存しました' },
+} satisfies Translation['setupTranslations'];

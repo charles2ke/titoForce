@@ -1,5 +1,6 @@
 import type { ChartType, ReportResult } from '@titoforce/shared';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { t } from '../i18n/index.ts';
 import { hex, SERIES } from '../lib/colors.ts';
 import { formatCompact, formatNumber } from '../lib/format.ts';
 
@@ -26,7 +27,7 @@ export function ReportChart({ chart, result, height = 260 }: { chart: ChartType;
       </div>
     );
   }
-  if (!result.rows.length) return <div className="flex items-center justify-center text-sm text-slate-400" style={{ height: Math.min(height, 160) }}>No data</div>;
+  if (!result.rows.length) return <div className="flex items-center justify-center text-sm text-slate-400" style={{ height: Math.min(height, 160) }}>{t('components.chart.noData')}</div>;
 
   if (chart === 'table') {
     return (
@@ -42,7 +43,7 @@ export function ReportChart({ chart, result, height = 260 }: { chart: ChartType;
           </tbody>
           <tfoot>
             <tr className="border-t border-slate-200">
-              <td className="pt-2 text-xs font-semibold text-slate-500 uppercase">Total</td>
+              <td className="pt-2 text-xs font-semibold text-slate-500 uppercase">{t('common.total')}</td>
               <td className="pt-2 text-right font-semibold tabular-nums">{fmt(result.total)}</td>
             </tr>
           </tfoot>

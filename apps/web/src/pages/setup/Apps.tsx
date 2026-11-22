@@ -6,24 +6,26 @@ import { api, errorMessage } from '../../api.ts';
 import { useConfirm, useToast } from '../../components/feedback.tsx';
 import { ColorPicker, IconPicker } from '../../components/pickers.tsx';
 import { Badge, Button, EmptyState, ErrorBanner, FormField, IconButton, Loading, Modal, ObjectTile, PageHeader } from '../../components/ui.tsx';
+import { type MessageKey, t, tEn } from '../../i18n/index.ts';
 import { Icon } from '../../lib/icons.tsx';
-import { invalidateMetadata, useApps, useObjects } from '../../lib/hooks.ts';
+import { invalidateMetadata, useSetupApps, useSetupObjects } from '../../lib/hooks.ts';
 
 const APP_ID_RE = /^[a-z][a-z0-9_]{1,39}$/;
 const MAX_NAV = 30;
 
-const PAGES: { id: AppPage; label: string; icon: string; help: string }[] = [
-  { id: 'home', label: 'Home', icon: 'house', help: 'The app’s home dashboard and assistant.' },
-  { id: 'forecast', label: 'Forecast', icon: 'trending-up', help: 'Sales forecast by owner and period.' },
-  { id: 'org-chart', label: 'Org Chart', icon: 'network', help: 'Employee hierarchy.' },
-  { id: 'reports', label: 'Reports', icon: 'chart-column', help: 'Reports and dashboards.' },
+// Page labels are also the default labels of new navigation items, which are saved as data and stay English (tEn).
+const PAGES: { id: AppPage; label: MessageKey; icon: string; help: MessageKey }[] = [
+  { id: 'home', label: 'setupApps.pages.home.label', icon: 'house', help: 'setupApps.pages.home.help' },
+  { id: 'forecast', label: 'setupApps.pages.forecast.label', icon: 'trending-up', help: 'setupApps.pages.forecast.help' },
+  { id: 'org-chart', label: 'setupApps.pages.orgChart.label', icon: 'network', help: 'setupApps.pages.orgChart.help' },
+  { id: 'reports', label: 'setupApps.pages.reports.label', icon: 'chart-column', help: 'setupApps.pages.reports.help' },
 ];
 
-const VIEWS: { id: ViewType; label: string }[] = [
-  { id: 'table', label: 'Table' },
-  { id: 'kanban', label: 'Kanban' },
-  { id: 'calendar', label: 'Calendar' },
-  { id: 'timeline', label: 'Timeline' },
+const VIEWS: { id: ViewType; label: MessageKey }[] = [
+  { id: 'table', label: 'setupApps.views.table' },
+  { id: 'kanban', label: 'setupApps.views.kanban' },
+  { id: 'calendar', label: 'setupApps.views.calendar' },
+  { id: 'timeline', label: 'setupApps.views.timeline' },
 ];
 
 const appIdFrom = (name: string) =>
@@ -69,7 +71,7 @@ function NavEditor({ rows, onChange, objects }: { rows: NavRow[]; onChange: (row
 
   return (
     <div className="space-y-2">
-      {rows.length === 0 && <p className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-sm text-slate-500">No navigation items yet. Add objects and pages below.</p>}
+      {rows.length === 0 && <p className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-sm text-slate-500">{t('setupApps.nav.empty')}</p>}
       <ol className="space-y-2">
         {rows.map((r, i) => {
           const n = i + 1;
@@ -81,22 +83,22 @@ function NavEditor({ rows, onChange, objects }: { rows: NavRow[]; onChange: (row
                 <>
                   <Badge color="blue">
                     <Database className="mr-1 inline size-3" aria-hidden />
-                    Object
+                    {t('common.object')}
                   </Badge>
-                  <select aria-label={`Item ${n} object`} className="input min-w-36 flex-1" value={r.object} onChange={(e) => replace(r.key, { ...r, object: e.target.value, view: undefined })}>
-                    {!def && <option value={r.object}>{r.object || 'Choose…'}</option>}
+                  <select aria-label={t('setupApps.nav.itemObject', { n })} className="input min-w-36 flex-1" value={r.object} onChange={(e) => replace(r.key, { ...r, object: e.target.value, view: undefined })}>
+                    {!def && <option value={r.object}>{r.object || t('common.choose')}</option>}
                     {sorted.map((o) => (
                       <option key={o.apiName} value={o.apiName}>
                         {o.pluralLabel}
                       </option>
                     ))}
                   </select>
-                  <input aria-label={`Item ${n} label`} className="input min-w-28 flex-1" value={r.label ?? ''} maxLength={60} placeholder={def?.pluralLabel ?? 'Label'} onChange={(e) => replace(r.key, { ...r, label: e.target.value })} />
-                  <select aria-label={`Item ${n} default view`} className="input w-32 shrink-0" value={r.view ?? ''} onChange={(e) => replace(r.key, { ...r, view: (e.target.value || undefined) as ViewType | undefined })}>
-                    <option value="">Default view</option>
+                  <input aria-label={t('setupApps.nav.itemLabel', { n })} className="input min-w-28 flex-1" value={r.label ?? ''} maxLength={60} placeholder={def?.pluralLabel ?? t('common.label')} onChange={(e) => replace(r.key, { ...r, label: e.target.value })} />
+                  <select aria-label={t('setupApps.nav.itemView', { n })} className="input w-32 shrink-0" value={r.view ?? ''} onChange={(e) => replace(r.key, { ...r, view: (e.target.value || undefined) as ViewType | undefined })}>
+                    <option value="">{t('setupApps.nav.defaultView')}</option>
                     {VIEWS.filter((v) => viewsFor(def).includes(v.id) || v.id === r.view).map((v) => (
                       <option key={v.id} value={v.id}>
-                        {v.label}
+                        {t(v.label)}
                       </option>
                     ))}
                   </select>
@@ -105,37 +107,37 @@ function NavEditor({ rows, onChange, objects }: { rows: NavRow[]; onChange: (row
                 <>
                   <Badge color="purple">
                     <FileText className="mr-1 inline size-3" aria-hidden />
-                    Page
+                    {t('setupApps.nav.page')}
                   </Badge>
                   <select
-                    aria-label={`Item ${n} page`}
+                    aria-label={t('setupApps.nav.itemPage', { n })}
                     className="input min-w-32 flex-1"
                     value={r.page}
                     onChange={(e) => {
                       const page = PAGES.find((p) => p.id === e.target.value)!;
                       const prev = PAGES.find((p) => p.id === r.page);
-                      replace(r.key, { ...r, page: page.id, label: !r.label || r.label === prev?.label ? page.label : r.label, icon: !r.icon || r.icon === prev?.icon ? page.icon : r.icon });
+                      replace(r.key, { ...r, page: page.id, label: !r.label || r.label === (prev && tEn(prev.label)) ? tEn(page.label) : r.label, icon: !r.icon || r.icon === prev?.icon ? page.icon : r.icon });
                     }}
                   >
                     {PAGES.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.label}
+                        {t(p.label)}
                       </option>
                     ))}
                   </select>
-                  <input aria-label={`Item ${n} label`} className="input min-w-28 flex-1" value={r.label} maxLength={60} placeholder="Label" onChange={(e) => replace(r.key, { ...r, label: e.target.value })} />
+                  <input aria-label={t('setupApps.nav.itemLabel', { n })} className="input min-w-28 flex-1" value={r.label} maxLength={60} placeholder={t('common.label')} onChange={(e) => replace(r.key, { ...r, label: e.target.value })} />
                   <div className="w-40 shrink-0">
                     <IconPicker id={`nav-icon-${r.key}`} value={r.icon} onChange={(icon) => replace(r.key, { ...r, icon })} />
                     <label htmlFor={`nav-icon-${r.key}`} className="sr-only">
-                      Item {n} icon
+                      {t('setupApps.nav.itemIcon', { n })}
                     </label>
                   </div>
                 </>
               )}
               <div className="flex shrink-0 items-center">
-                <IconButton icon={ArrowUp} label={`Move item ${n} up`} className="size-7 disabled:opacity-30" disabled={i === 0} onClick={() => move(i, i - 1)} />
-                <IconButton icon={ArrowDown} label={`Move item ${n} down`} className="size-7 disabled:opacity-30" disabled={i === rows.length - 1} onClick={() => move(i, i + 1)} />
-                <IconButton icon={X} label={`Remove item ${n}`} className="size-7" onClick={() => onChange(rows.filter((x) => x.key !== r.key))} />
+                <IconButton icon={ArrowUp} label={t('setupApps.nav.moveUp', { n })} className="size-7 disabled:opacity-30" disabled={i === 0} onClick={() => move(i, i - 1)} />
+                <IconButton icon={ArrowDown} label={t('setupApps.nav.moveDown', { n })} className="size-7 disabled:opacity-30" disabled={i === rows.length - 1} onClick={() => move(i, i + 1)} />
+                <IconButton icon={X} label={t('setupApps.nav.remove', { n })} className="size-7" onClick={() => onChange(rows.filter((x) => x.key !== r.key))} />
               </div>
             </li>
           );
@@ -143,7 +145,7 @@ function NavEditor({ rows, onChange, objects }: { rows: NavRow[]; onChange: (row
       </ol>
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" icon={Plus} disabled={full || !firstUnused} onClick={() => onChange([...rows, { key: seq.current++, type: 'object', object: firstUnused!.apiName }])}>
-          Add object
+          {t('setupApps.nav.addObject')}
         </Button>
         <Button
           size="sm"
@@ -151,14 +153,12 @@ function NavEditor({ rows, onChange, objects }: { rows: NavRow[]; onChange: (row
           disabled={full}
           onClick={() => {
             const page = PAGES.find((p) => !rows.some((r) => r.type === 'page' && r.page === p.id)) ?? PAGES[0]!;
-            onChange([...rows, { key: seq.current++, type: 'page', page: page.id, label: page.label, icon: page.icon }]);
+            onChange([...rows, { key: seq.current++, type: 'page', page: page.id, label: tEn(page.label), icon: page.icon }]);
           }}
         >
-          Add page
+          {t('setupApps.nav.addPage')}
         </Button>
-        <span className="text-xs text-slate-400">
-          {rows.length}/{MAX_NAV} items
-        </span>
+        <span className="text-xs text-slate-400">{t('setupApps.nav.count', { used: rows.length, max: MAX_NAV })}</span>
       </div>
     </div>
   );
@@ -179,26 +179,26 @@ function AppForm({ app, apps, objects, onClose }: { app: AppDef | null; apps: Ap
   const [color, setColor] = useState<PaletteColor>(app && isPalette(app.color) ? app.color : 'indigo');
   const [dashboardId, setDashboardId] = useState(app?.dashboardId ?? '');
   const [sortOrder, setSortOrder] = useState(String(app?.sortOrder ?? Math.min(1000, Math.max(0, ...apps.map((a) => a.sortOrder)) + 1)));
-  const [nav, setNav] = useState<NavRow[]>(() => (app?.nav ?? [{ type: 'page', page: 'home', label: 'Home', icon: 'house' } as AppNavItem]).map((n, i) => ({ ...n, key: i })));
+  const [nav, setNav] = useState<NavRow[]>(() => (app?.nav ?? [{ type: 'page', page: 'home', label: tEn('setupApps.pages.home.label'), icon: 'house' } as AppNavItem]).map((n, i) => ({ ...n, key: i })));
 
   const effectiveId = isNew ? (idTouched ? appId : appIdFrom(name)) : (app?.id ?? '');
   const idError =
     !isNew || !effectiveId
       ? null
       : !APP_ID_RE.test(effectiveId)
-        ? 'Use 2–40 lowercase letters, numbers and underscores, starting with a letter.'
+        ? t('setupApps.form.idInvalid')
         : apps.some((a) => a.id === effectiveId)
-          ? 'An app with this id already exists.'
+          ? t('setupApps.form.idTaken')
           : null;
   const order = Number(sortOrder);
   const problem = !name.trim()
-    ? 'Enter a name.'
+    ? t('setupApps.form.problems.enterName')
     : isNew && (!effectiveId || idError)
-      ? 'Fix the app id.'
+      ? t('setupApps.form.problems.fixId')
       : !Number.isInteger(order) || order < 0 || order > 1000
-        ? 'Sort order must be a whole number from 0 to 1000.'
+        ? t('setupApps.form.problems.sortOrder')
         : nav.some((n) => n.type === 'page' && !n.label.trim())
-          ? 'Every page needs a label.'
+          ? t('setupApps.form.problems.pageLabel')
           : null;
 
   const save = useMutation({
@@ -215,7 +215,7 @@ function AppForm({ app, apps, objects, onClose }: { app: AppDef | null; apps: Ap
       return isNew ? api.post<AppDef>('/api/apps', { ...body, id: effectiveId }) : api.put<AppDef>(`/api/apps/${app!.id}`, body);
     },
     onSuccess: async (saved) => {
-      toast.success(isNew ? `${saved.name} app created` : `${saved.name} saved`);
+      toast.success(isNew ? t('setupApps.toasts.created', { name: saved.name }) : t('setupApps.toasts.saved', { name: saved.name }));
       onClose();
       await invalidateMetadata(qc);
     },
@@ -227,14 +227,14 @@ function AppForm({ app, apps, objects, onClose }: { app: AppDef | null; apps: Ap
     <Modal
       open
       onClose={onClose}
-      title={isNew ? 'New app' : `Edit ${app?.name}`}
+      title={isNew ? t('setupApps.new') : t('setupApps.edit', { name: app?.name ?? '' })}
       size="xl"
       footer={
         <>
           {problem && <span className="mr-auto text-xs text-slate-500">{problem}</span>}
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" type="submit" form={formId} disabled={!!problem} loading={save.isPending}>
-            {isNew ? 'Create app' : 'Save app'}
+            {isNew ? t('setupApps.form.create') : t('setupApps.form.save')}
           </Button>
         </>
       }
@@ -249,11 +249,11 @@ function AppForm({ app, apps, objects, onClose }: { app: AppDef | null; apps: Ap
       >
         <ErrorBanner error={save.error} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField label="App name" required htmlFor={ids.name}>
-            <input id={ids.name} className="input" value={name} maxLength={40} placeholder="Customer Success" onChange={(e) => setName(e.target.value)} />
+          <FormField label={t('setupApps.form.name')} required htmlFor={ids.name}>
+            <input id={ids.name} className="input" value={name} maxLength={40} placeholder={t('setupApps.form.namePlaceholder')} onChange={(e) => setName(e.target.value)} />
           </FormField>
           {isNew ? (
-            <FormField label="App id" required htmlFor={ids.id} error={idError} help="Permanent identifier used in links.">
+            <FormField label={t('setupApps.form.id')} required htmlFor={ids.id} error={idError} help={t('setupApps.form.idHelp')}>
               <input
                 id={ids.id}
                 className="input font-mono"
@@ -266,24 +266,24 @@ function AppForm({ app, apps, objects, onClose }: { app: AppDef | null; apps: Ap
               />
             </FormField>
           ) : (
-            <FormField label="App id">
+            <FormField label={t('setupApps.form.id')}>
               <div className="input bg-slate-50 font-mono text-slate-600">{app?.id}</div>
             </FormField>
           )}
-          <FormField label="Description" htmlFor={ids.desc} className="sm:col-span-2">
+          <FormField label={t('common.description')} htmlFor={ids.desc} className="sm:col-span-2">
             <input id={ids.desc} className="input" value={description} maxLength={500} onChange={(e) => setDescription(e.target.value)} />
           </FormField>
-          <FormField label="Icon" htmlFor={ids.icon}>
+          <FormField label={t('common.icon')} htmlFor={ids.icon}>
             <IconPicker id={ids.icon} value={icon} onChange={setIcon} />
           </FormField>
           <div>
-            <span className="label">Color</span>
+            <span className="label">{t('common.color')}</span>
             <ColorPicker value={color} onChange={setColor} />
           </div>
-          <FormField label="Home dashboard" htmlFor={ids.dashboard} help="Shown on the app’s Home page.">
+          <FormField label={t('setupApps.homeDashboard')} htmlFor={ids.dashboard} help={t('setupApps.form.homeDashboardHelp')}>
             <select id={ids.dashboard} className="input" value={dashboardId} onChange={(e) => setDashboardId(e.target.value)}>
-              <option value="">None</option>
-              {dashboardId && !sortedDashboards.some((d) => d.id === dashboardId) && <option value={dashboardId}>{dashboards.isLoading ? 'Loading…' : dashboardId}</option>}
+              <option value="">{t('common.none')}</option>
+              {dashboardId && !sortedDashboards.some((d) => d.id === dashboardId) && <option value={dashboardId}>{dashboards.isLoading ? t('common.loading') : dashboardId}</option>}
               {sortedDashboards.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
@@ -291,13 +291,13 @@ function AppForm({ app, apps, objects, onClose }: { app: AppDef | null; apps: Ap
               ))}
             </select>
           </FormField>
-          <FormField label="Sort order" htmlFor={ids.order} help="Lower numbers come first in the app switcher.">
+          <FormField label={t('setupApps.form.sortOrder')} htmlFor={ids.order} help={t('setupApps.form.sortOrderHelp')}>
             <input id={ids.order} type="number" min={0} max={1000} step={1} className="input" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />
           </FormField>
         </div>
         <fieldset>
-          <legend className="label">Navigation</legend>
-          <p className="mb-2 text-xs text-slate-500">Tabs shown in the app’s sidebar, in order. Leave an object’s label empty to use its plural name.</p>
+          <legend className="label">{t('setupApps.navigation')}</legend>
+          <p className="mb-2 text-xs text-slate-500">{t('setupApps.form.navigationHelp')}</p>
           <NavEditor rows={nav} onChange={setNav} objects={objects} />
         </fieldset>
       </form>
@@ -306,8 +306,8 @@ function AppForm({ app, apps, objects, onClose }: { app: AppDef | null; apps: Ap
 }
 
 export default function Apps() {
-  const apps = useApps();
-  const objects = useObjects();
+  const apps = useSetupApps();
+  const objects = useSetupObjects();
   const dashboards = useDashboards();
   const qc = useQueryClient();
   const toast = useToast();
@@ -317,7 +317,7 @@ export default function Apps() {
   const remove = useMutation({
     mutationFn: (app: AppDef) => api.del(`/api/apps/${app.id}`),
     onSuccess: async (_r, app) => {
-      toast.success(`${app.name} deleted`);
+      toast.success(t('setupApps.toasts.deleted', { name: app.name }));
       await invalidateMetadata(qc);
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -329,11 +329,11 @@ export default function Apps() {
   return (
     <div className="mx-auto max-w-6xl p-6">
       <PageHeader
-        title="Apps"
-        subtitle="Bundle objects and pages into apps for each team. Users switch between apps from the app launcher."
+        title={t('setupApps.title')}
+        subtitle={t('setupApps.subtitle')}
         actions={
           <Button variant="primary" icon={Plus} disabled={!apps.data || !objects.data} onClick={() => setEditing('new')}>
-            New app
+            {t('setupApps.new')}
           </Button>
         }
       />
@@ -345,19 +345,19 @@ export default function Apps() {
             <ErrorBanner error={apps.error} />
           </div>
         ) : list.length === 0 ? (
-          <EmptyState icon={LayoutGrid} title="No apps yet" action={<Button icon={Plus} disabled={!objects.data} onClick={() => setEditing('new')}>Create your first app</Button>} />
+          <EmptyState icon={LayoutGrid} title={t('setupApps.list.empty')} action={<Button icon={Plus} disabled={!objects.data} onClick={() => setEditing('new')}>{t('setupApps.list.createFirst')}</Button>} />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50/70 text-left text-xs font-semibold text-slate-500 uppercase">
                 <tr>
-                  <th className="px-4 py-2.5">App</th>
-                  <th className="px-4 py-2.5">Description</th>
-                  <th className="px-4 py-2.5">Navigation</th>
-                  <th className="px-4 py-2.5">Home dashboard</th>
-                  <th className="px-4 py-2.5 text-right">Order</th>
+                  <th className="px-4 py-2.5">{t('setupApps.list.app')}</th>
+                  <th className="px-4 py-2.5">{t('common.description')}</th>
+                  <th className="px-4 py-2.5">{t('setupApps.navigation')}</th>
+                  <th className="px-4 py-2.5">{t('setupApps.homeDashboard')}</th>
+                  <th className="px-4 py-2.5 text-right">{t('setupApps.list.order')}</th>
                   <th className="px-4 py-2.5">
-                    <span className="sr-only">Actions</span>
+                    <span className="sr-only">{t('common.actions')}</span>
                   </th>
                 </tr>
               </thead>
@@ -388,21 +388,21 @@ export default function Apps() {
                             </span>
                           ),
                         )}
-                        {a.nav.length > 6 && <span className="text-xs text-slate-400">+{a.nav.length - 6} more</span>}
+                        {a.nav.length > 6 && <span className="text-xs text-slate-400">{t('setupApps.list.more', { count: a.nav.length - 6 })}</span>}
                       </div>
                     </td>
                     <td className="px-4 py-2.5 text-slate-600">{dashboardName(a.dashboardId)}</td>
                     <td className="px-4 py-2.5 text-right text-slate-600 tabular-nums">{a.sortOrder}</td>
                     <td className="px-4 py-2.5">
                       <div className="flex justify-end gap-0.5">
-                        <IconButton icon={Pencil} label={`Edit ${a.name}`} disabled={!objects.data} onClick={() => setEditing(a)} />
+                        <IconButton icon={Pencil} label={t('setupApps.edit', { name: a.name })} disabled={!objects.data} onClick={() => setEditing(a)} />
                         <IconButton
                           icon={Trash}
-                          label={`Delete ${a.name}`}
+                          label={t('setupApps.list.delete', { name: a.name })}
                           className="hover:text-rose-600"
                           disabled={remove.isPending}
                           onClick={async () => {
-                            const ok = await confirm({ title: `Delete the ${a.name} app?`, message: 'Only the app is removed. Its objects, records, reports and dashboards are kept.', confirmLabel: 'Delete app', danger: true });
+                            const ok = await confirm({ title: t('setupApps.list.deleteTitle', { name: a.name }), message: t('setupApps.list.deleteMessage'), confirmLabel: t('setupApps.list.deleteConfirm'), danger: true });
                             if (ok) remove.mutate(a);
                           }}
                         />

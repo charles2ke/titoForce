@@ -4,6 +4,8 @@ import { newId, nowIso, truncate } from '../util.ts';
 
 export class NotificationService {
   private db: Db;
+  /** Called after each notification is stored (realtime delivery). */
+  onCreated: ((userId: string, notification: NotificationDTO) => void) | null = null;
 
   constructor(db: Db) {
     this.db = db;
@@ -12,14 +14,16 @@ export class NotificationService {
   async notify(userIds: (string | null | undefined)[], title: string, body?: string | null, link?: string | null): Promise<void> {
     const unique = [...new Set(userIds.filter((u): u is string => !!u))];
     for (const userId of unique) {
+      const n: NotificationDTO = { id: newId('ntf'), title: truncate(title, 200), body: body ? truncate(body, 2000) : null, link: link ?? null, read: false, createdAt: nowIso() };
       await this.db.run('INSERT INTO notifications (id, user_id, title, body, link, read, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)', [
-        newId('ntf'),
+        n.id,
         userId,
-        truncate(title, 200),
-        body ? truncate(body, 2000) : null,
-        link ?? null,
-        nowIso(),
+        n.title,
+        n.body,
+        n.link,
+        n.createdAt,
       ]);
+      this.onCreated?.(userId, n);
     }
   }
 

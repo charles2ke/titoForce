@@ -1,5 +1,6 @@
 import { DATE_LITERALS, type FieldDef, type FilterGroup, type FilterOperator, type FilterRule, type ObjectDef, OPERATOR_LABELS } from '@titoforce/shared';
 import { Plus, Trash } from 'lucide-react';
+import { t, tryT } from '../i18n/index.ts';
 import { fieldDef } from '../lib/format.ts';
 import { LookupInput, UserSelect } from './FieldInput.tsx';
 import { Button, IconButton } from './ui.tsx';
@@ -46,7 +47,10 @@ const OPS: Record<Kind, FilterOperator[]> = {
   user: ['eq', 'neq', 'is_empty', 'is_not_empty'],
 };
 
-const DATE_LABELS: Record<string, string> = Object.fromEntries(DATE_LITERALS.map((l) => [l, l.toLowerCase().replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())]));
+const humanize = (literal: string) => literal.toLowerCase().replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+// Operators and date literals may come from saved filters; ones without a message fall back to their English names.
+const dateLabel = (literal: string) => tryT(`filters.dates.${literal}`) ?? humanize(literal);
+const operatorLabel = (op: string) => tryT(`filters.operators.${op}`) ?? OPERATOR_LABELS[op] ?? op;
 
 export function filterableFields(def: ObjectDef): FieldDef[] {
   // "name" only adds something when it is computed from a template; otherwise it duplicates the name field.
@@ -73,9 +77,9 @@ function ValueInput({ field, rule, onChange }: { field: FieldDef; rule: FilterRu
   const cls = 'input flex-1 min-w-0';
   if (kind === 'bool') {
     return (
-      <select aria-label="Value" className={cls} value={String(v === true || v === 'true')} onChange={(e) => onChange(e.target.value === 'true')}>
-        <option value="true">True</option>
-        <option value="false">False</option>
+      <select aria-label={t('common.value')} className={cls} value={String(v === true || v === 'true')} onChange={(e) => onChange(e.target.value === 'true')}>
+        <option value="true">{t('filters.valueTrue')}</option>
+        <option value="false">{t('filters.valueFalse')}</option>
       </select>
     );
   }
@@ -94,7 +98,7 @@ function ValueInput({ field, rule, onChange }: { field: FieldDef; rule: FilterRu
                 onClick={() => onChange(on ? selected.filter((x) => x !== o.value) : [...selected, o.value])}
                 className={`rounded-full border px-2 py-0.5 text-xs ${on ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 text-slate-600'}`}
               >
-                {o.value}
+                {o.label ?? o.value}
               </button>
             );
           })}
@@ -102,10 +106,10 @@ function ValueInput({ field, rule, onChange }: { field: FieldDef; rule: FilterRu
       );
     }
     return (
-      <select aria-label="Value" className={cls} value={String(Array.isArray(v) ? (v[0] ?? '') : (v ?? ''))} onChange={(e) => onChange(e.target.value)}>
+      <select aria-label={t('common.value')} className={cls} value={String(Array.isArray(v) ? (v[0] ?? '') : (v ?? ''))} onChange={(e) => onChange(e.target.value)}>
         {field.options?.map((o) => (
           <option key={o.value} value={o.value}>
-            {o.value}
+            {o.label ?? o.value}
           </option>
         ))}
       </select>
@@ -115,28 +119,28 @@ function ValueInput({ field, rule, onChange }: { field: FieldDef; rule: FilterRu
     const literal = typeof v === 'string' && (DATE_LITERALS as readonly string[]).includes(v);
     return (
       <div className="flex flex-1 gap-1.5">
-        <select aria-label="Date value" className="input w-40" value={literal ? String(v) : 'DATE'} onChange={(e) => onChange(e.target.value === 'DATE' ? '' : e.target.value)}>
-          <option value="DATE">Specific date</option>
+        <select aria-label={t('filters.dateValue')} className="input w-40" value={literal ? String(v) : 'DATE'} onChange={(e) => onChange(e.target.value === 'DATE' ? '' : e.target.value)}>
+          <option value="DATE">{t('filters.specificDate')}</option>
           {DATE_LITERALS.map((l) => (
             <option key={l} value={l}>
-              {DATE_LABELS[l]}
+              {dateLabel(l)}
             </option>
           ))}
         </select>
-        {!literal && <input aria-label="Date" type="date" className="input min-w-0 flex-1" value={String(v ?? '')} onChange={(e) => onChange(e.target.value)} />}
+        {!literal && <input aria-label={t('common.date')} type="date" className="input min-w-0 flex-1" value={String(v ?? '')} onChange={(e) => onChange(e.target.value)} />}
       </div>
     );
   }
   if (kind === 'user') {
     return (
       <div className="flex flex-1 gap-1.5">
-        <select aria-label="User value" className="input w-36" value={v === 'CURRENT_USER' ? 'CURRENT_USER' : 'USER'} onChange={(e) => onChange(e.target.value === 'CURRENT_USER' ? 'CURRENT_USER' : '')}>
-          <option value="CURRENT_USER">Current user</option>
-          <option value="USER">Specific user</option>
+        <select aria-label={t('filters.userValue')} className="input w-36" value={v === 'CURRENT_USER' ? 'CURRENT_USER' : 'USER'} onChange={(e) => onChange(e.target.value === 'CURRENT_USER' ? 'CURRENT_USER' : '')}>
+          <option value="CURRENT_USER">{t('filters.currentUser')}</option>
+          <option value="USER">{t('filters.specificUser')}</option>
         </select>
         {v !== 'CURRENT_USER' && (
           <div className="min-w-0 flex-1">
-            <UserSelect value={(v as string) || null} onChange={(id) => onChange(id ?? '')} emptyLabel="Choose…" />
+            <UserSelect value={(v as string) || null} onChange={(id) => onChange(id ?? '')} emptyLabel={t('common.choose')} />
           </div>
         )}
       </div>
@@ -149,7 +153,7 @@ function ValueInput({ field, rule, onChange }: { field: FieldDef; rule: FilterRu
       </div>
     );
   }
-  return <input aria-label="Value" type={kind === 'number' ? 'number' : 'text'} className={cls} value={String(v ?? '')} onChange={(e) => onChange(kind === 'number' && e.target.value !== '' ? Number(e.target.value) : e.target.value)} />;
+  return <input aria-label={t('common.value')} type={kind === 'number' ? 'number' : 'text'} className={cls} value={String(v ?? '')} onChange={(e) => onChange(kind === 'number' && e.target.value !== '' ? Number(e.target.value) : e.target.value)} />;
 }
 
 /** Builds a FilterGroup ("all"/"any" of a list of field conditions). */
@@ -172,10 +176,10 @@ export function FilterEditor({ def, value, onChange }: { def: ObjectDef; value: 
     <div className="space-y-2">
       {group.rules.length > 1 && (
         <div className="flex items-center gap-2 text-sm text-slate-600">
-          Match
-          <select aria-label="Match" className="input w-auto py-1" value={group.match} onChange={(e) => update(group.rules, e.target.value as 'all' | 'any')}>
-            <option value="all">all conditions</option>
-            <option value="any">any condition</option>
+          {t('filters.match')}
+          <select aria-label={t('filters.match')} className="input w-auto py-1" value={group.match} onChange={(e) => update(group.rules, e.target.value as 'all' | 'any')}>
+            <option value="all">{t('filters.matchAll')}</option>
+            <option value="any">{t('filters.matchAny')}</option>
           </select>
         </div>
       )}
@@ -187,7 +191,7 @@ export function FilterEditor({ def, value, onChange }: { def: ObjectDef; value: 
         return (
           <div key={i} className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
             <select
-              aria-label="Field"
+              aria-label={t('common.field')}
               className="input w-44"
               value={rule.field}
               onChange={(e) => {
@@ -202,20 +206,20 @@ export function FilterEditor({ def, value, onChange }: { def: ObjectDef; value: 
                 </option>
               ))}
             </select>
-            <select aria-label="Operator" className="input w-40" value={ops.includes(rule.op) ? rule.op : ops[0]} onChange={(e) => set({ op: e.target.value as FilterOperator })}>
+            <select aria-label={t('filters.operator')} className="input w-40" value={ops.includes(rule.op) ? rule.op : ops[0]} onChange={(e) => set({ op: e.target.value as FilterOperator })}>
               {ops.map((o) => (
                 <option key={o} value={o}>
-                  {OPERATOR_LABELS[o] ?? o}
+                  {operatorLabel(o)}
                 </option>
               ))}
             </select>
             {f && <ValueInput field={f} rule={rule} onChange={(v) => set({ value: v })} />}
-            <IconButton icon={Trash} label="Remove condition" onClick={() => update(group.rules.filter((_, j) => j !== i))} />
+            <IconButton icon={Trash} label={t('filters.removeCondition')} onClick={() => update(group.rules.filter((_, j) => j !== i))} />
           </div>
         );
       })}
       <Button size="sm" variant="ghost" icon={Plus} onClick={addRule}>
-        Add condition
+        {t('filters.addCondition')}
       </Button>
     </div>
   );
@@ -230,12 +234,14 @@ export function completeFilter(g: FilterGroup | null | undefined): FilterGroup |
 }
 
 export function describeFilter(def: ObjectDef, g: FilterGroup | null | undefined): string {
-  if (!g?.rules.length) return 'No conditions';
+  if (!g?.rules.length) return t('filters.noConditions');
   return g.rules
     .map((r) => {
-      const f = fieldDef(def, r.field);
-      const v = r.op === 'is_empty' || r.op === 'is_not_empty' ? '' : ` ${Array.isArray(r.value) ? r.value.join(', ') : r.value === 'CURRENT_USER' ? 'me' : String(r.value ?? '')}`;
-      return `${f?.label ?? r.field} ${OPERATOR_LABELS[r.op] ?? r.op}${v}`;
+      const field = fieldDef(def, r.field)?.label ?? r.field;
+      const operator = operatorLabel(r.op);
+      if (r.op === 'is_empty' || r.op === 'is_not_empty') return t('filters.describe.ruleNoValue', { field, operator });
+      const value = Array.isArray(r.value) ? r.value.join(', ') : r.value === 'CURRENT_USER' ? t('filters.me') : String(r.value ?? '');
+      return t('filters.describe.rule', { field, operator, value });
     })
-    .join(g.match === 'all' ? ' AND ' : ' OR ');
+    .reduce((left, right) => t(g.match === 'all' ? 'filters.describe.and' : 'filters.describe.or', { left, right }));
 }

@@ -79,7 +79,13 @@ export class AutomationService {
     return a;
   }
 
-  private async validate(input: AutomationInput): Promise<AutomationInput> {
+  /** Forgets the cached automations (after a deployment changed them). */
+  invalidate(): void {
+    this.cache = null;
+  }
+
+  /** Checks and normalizes an automation. */
+  async validate(input: AutomationInput): Promise<AutomationInput> {
     if (!input.name?.trim()) throw badRequest('Name is required');
     this.metadata.require(input.object);
     if (!input.trigger || !TRIGGERS.includes(input.trigger.type)) throw badRequest('Choose a trigger');

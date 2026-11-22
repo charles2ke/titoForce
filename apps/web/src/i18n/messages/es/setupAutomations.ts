@@ -1,0 +1,193 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  actionTypes: {
+    updateRecord: 'Actualizar este registro',
+    updateRelated: 'Actualizar registro relacionado',
+    createRecord: 'Crear registro',
+    notify: 'Enviar notificación',
+    runAgent: 'Ejecutar agente de IA',
+    webhook: 'Llamar a webhook',
+    submitApproval: 'Enviar para aprobación',
+  },
+
+  chooseObject: 'Elegir un objeto…',
+
+  editor: {
+    item: 'Acción',
+    numbered: '{label} {n}',
+    empty: 'Todavía no hay acciones.',
+    add: 'Añadir acción',
+    actionType: 'Tipo de acción',
+    moveUp: 'Subir acción',
+    moveDown: 'Bajar acción',
+    remove: 'Quitar acción',
+    inactiveOption: '{name} (inactivo)',
+    templateHint:
+      'Inserte valores dinámicos con {braces}, p. ej., {recordName}, {previousValue}, {ownerName}, {userName} (quien hizo el cambio) o fórmulas como {formula}.',
+    templateHintRelated:
+      'Inserte valores dinámicos con {braces}, p. ej., {recordName}, {previousValue}, {ownerName}, {userName} (quien hizo el cambio), {relatedName} o fórmulas como {formula}.',
+  },
+  problems: {
+    chooseObjectToCreate: '{item}: elija el objeto que se va a crear.',
+    addField: '{item}: añada al menos un campo.',
+    chooseRelatedRecord: '{item}: elija el registro relacionado.',
+    chooseRecipient: '{item}: elija a quién se notifica.',
+    enterNotificationTitle: '{item}: introduzca un título para la notificación.',
+    chooseAgent: '{item}: elija un agente.',
+    enterPrompt: '{item}: introduzca una instrucción.',
+    enterUrl: '{item}: introduzca una URL http(s).',
+  },
+  fieldValues: {
+    valueFor: 'Valor de {field}',
+    valuePlaceholder: 'Texto o {template}',
+    useFormulaFor: 'Usar una fórmula para {field}',
+    useFixedValue: 'Volver a un valor fijo',
+    useFormula: 'Usar una fórmula o plantilla',
+    remove: 'Quitar {field}',
+    chooseObjectFirst: 'Primero, elija un objeto.',
+    empty: 'Todavía no hay campos: añada los campos que debe establecer esta acción.',
+    add: 'Añadir campo',
+  },
+  updateRelated: {
+    relatedRecord: 'Registro relacionado',
+    relatedRecordHelp: 'Se actualiza el registro al que hace referencia este campo de búsqueda.',
+    noLookupFields: 'El objeto {object} no tiene campos de búsqueda.',
+    chooseLookupField: 'Elegir un campo de búsqueda…',
+    anyObject: 'cualquier objeto',
+    showFieldsOf: 'Mostrar los campos de',
+    showFieldsOfHelp:
+      'La búsqueda puede apuntar a cualquier objeto; elija el objeto cuyos campos quiere establecer.',
+  },
+  createRecord: {
+    object: 'Objeto que se va a crear',
+    objectHelp:
+      'El propietario del nuevo registro es el de este registro, salvo que establezca el campo Propietario. Use {example} en un campo de búsqueda para vincularlo a este registro.',
+  },
+  notify: {
+    sendTo: 'Enviar a',
+    recipients: {
+      owner: 'Propietario del registro',
+      triggeringUser: 'Usuario que hizo el cambio',
+      user: 'Un usuario concreto',
+      role: 'Todos los usuarios con un rol',
+      field: 'Usuario de un campo del registro',
+    },
+    user: 'Usuario',
+    chooseUser: 'Elegir un usuario…',
+    chooseRole: 'Elegir un rol…',
+    roleId: 'ID del rol',
+    roleIdHelp: 'p. ej., {example}',
+    userField: 'Campo de usuario',
+    userFieldHelp: 'Se notifica al usuario almacenado en este campo.',
+    noUserFields: 'El objeto {object} no tiene campos de usuario.',
+    title: 'Título de la notificación',
+    titlePlaceholder: 'Prospecto caliente: {recordName}',
+    message: 'Mensaje de la notificación',
+  },
+  runAgent: {
+    agent: 'Agente',
+    chooseAgent: 'Elegir un agente…',
+    prompt: 'Instrucción',
+    promptHelp:
+      'El agente se ejecuta en segundo plano con este registro como contexto. Se admiten plantillas como {example}.',
+    promptPlaceholder: 'Calificar este prospecto',
+  },
+  webhook: {
+    url: 'URL del webhook',
+    urlHelp:
+      'Recibe una carga JSON con el evento, el objeto, el registro y los valores anteriores. Las llamadas se ejecutan en segundo plano.',
+    method: 'Método',
+  },
+  submitApproval: {
+    process: 'Proceso de aprobación',
+    processHelp:
+      'Déjelo en automático para usar el primer proceso activo cuyas condiciones de entrada se cumplan.',
+    automatic: 'Automático (primer proceso que coincida)',
+    comment: 'Comentario del envío',
+    commentHelp: 'Opcional; se admiten plantillas.',
+  },
+
+  title: 'Automatizaciones',
+  subtitle: 'Ejecute acciones automáticamente cuando se crean, actualizan o eliminan registros.',
+  runHistory: 'Historial de ejecuciones',
+  runHistoryOf: 'Historial de ejecuciones de {name}',
+  new: 'Nueva automatización',
+  edit: 'Editar {name}',
+  trigger: 'Desencadenador',
+  list: {
+    searchLabel: 'Buscar automatizaciones',
+    searchPlaceholder: 'Buscar automatizaciones…',
+    filterByObject: 'Filtrar por objeto',
+    allObjects: 'Todos los objetos',
+    noMatch: 'Ninguna automatización coincide',
+    empty: 'Todavía no hay automatizaciones',
+    emptyText:
+      'Las automatizaciones actualizan campos, crean registros de seguimiento, envían notificaciones, llaman a webhooks o asignan trabajo a agentes de IA.',
+    createFirst: 'Cree su primera automatización',
+    conditions: 'Condiciones',
+    actions: 'Acciones',
+    runs: 'Ejecuciones',
+    lastRun: 'Última ejecución',
+    rowActions: 'Acciones de la fila',
+    conditionCount: { one: '{count} condición', other: '{count} condiciones' },
+    noConditions: 'Sin condiciones',
+    failedCount: { one: '{count} fallida', other: '{count} fallidas' },
+    never: 'Nunca',
+    activeLabel: '{name}: activa',
+    delete: 'Eliminar {name}',
+    deleteTitle: '¿Eliminar {name}?',
+    deleteMessage:
+      'La automatización deja de ejecutarse y se elimina de forma permanente, junto con su historial de ejecuciones.',
+    deleteConfirm: 'Eliminar automatización',
+  },
+  toasts: {
+    created: 'Se ha creado la automatización “{name}”',
+    saved: 'Se ha guardado la automatización “{name}”',
+    activated: 'Se ha activado la automatización “{name}”',
+    deactivated: 'Se ha desactivado la automatización “{name}”',
+    deleted: 'Se ha eliminado la automatización “{name}”',
+  },
+  triggers: {
+    created: { label: 'Se crea un registro de {object}', short: 'Creación' },
+    updated: { label: 'Se actualiza un registro de {object}', short: 'Actualización' },
+    saved: { label: 'Se crea o actualiza un registro de {object}', short: 'Creación o actualización' },
+    deleted: { label: 'Se elimina un registro de {object}', short: 'Eliminación' },
+  },
+  triggerSummary: { one: '{trigger} · cuando cambia {fields}', other: '{trigger} · cuando cambian {fields}' },
+  watch: {
+    legend: 'Solo cuando cambien estos campos',
+    selected: {
+      one: '{count} seleccionado. Con “creación o actualización”, también se ejecuta al crear registros.',
+      other: '{count} seleccionados. Con “creación o actualización”, también se ejecuta al crear registros.',
+    },
+    none: 'Deje todos sin marcar para que se ejecute con cualquier cambio.',
+  },
+  form: {
+    create: 'Crear automatización',
+    save: 'Guardar automatización',
+    namePlaceholder: 'Avisar al propietario de las oportunidades grandes',
+    objectFixed: 'El objeto de una automatización existente no se puede cambiar.',
+    when: '1. Cuándo',
+    deletedNote:
+      'Cuando se ejecuta la automatización, el registro ya no existe, así que solo puede enviar notificaciones, llamar a webhooks, crear registros o actualizar registros relacionados.',
+    onlyIf: '2. Solo si (opcional)',
+    conditionsBeforeDelete: 'Las condiciones se comprueban con el registro tal como estaba antes de eliminarlo.',
+    conditionsAfterChange: 'Las condiciones se comprueban con el registro después del cambio.',
+    currentUserNote: '“Usuario actual” es la persona que hizo el cambio.',
+    then: '3. Entonces',
+    actionsEmpty: 'Añada la primera acción que debe realizar esta automatización.',
+    retriggerWarning:
+      'Esta automatización actualiza el registro sobre el que se ejecuta, y esa actualización puede volver a desencadenarla. Las repeticiones se detienen cuando una ejecución no cambia nada o tras 4 niveles. Para que se ejecute una vez por cambio, supervise campos concretos (no los que establece) o añada una condición.',
+    changeObjectTitle: '¿Cambiar el objeto?',
+    changeObjectMessage:
+      'Las condiciones, los campos supervisados y las acciones hacen referencia al objeto actual y se borrarán.',
+    changeObjectConfirm: 'Cambiar objeto',
+    problems: {
+      enterName: 'Introduzca un nombre.',
+      chooseObject: 'Elija un objeto.',
+      addAction: 'Añada al menos una acción.',
+      actionAfterDelete: 'La acción {n} ({action}) no se puede ejecutar después de eliminar un registro.',
+    },
+  },
+} satisfies Translation['setupAutomations'];

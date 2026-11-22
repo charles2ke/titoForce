@@ -77,6 +77,16 @@ describe('records', () => {
     expect((await s.records.get(maria, 'account', account.id)).fields.won_revenue).toBe(0);
   });
 
+  it('dates the history of lookups cleared by a deletion at the deletion', async () => {
+    const account = await s.records.create(admin, 'account', { name: 'Short-lived Co' });
+    const contact = await s.records.create(admin, 'contact', { last_name: 'Orphan', account: account.id }, { timestamp: '2024-01-15T10:00:00.000Z' });
+    const deletedAfter = new Date().toISOString();
+    await s.records.delete(admin, 'account', account.id);
+    const history = await s.db.all<{ changes: string; created_at: string }>("SELECT changes, created_at FROM record_history WHERE record_id = ? AND event = 'updated'", [contact.id]);
+    expect(history.map((h) => JSON.parse(h.changes))).toEqual([[{ field: 'account', from: account.id, to: null }]]);
+    expect(history[0]!.created_at >= deletedAfter, history[0]!.created_at).toBe(true);
+  });
+
   it('applies role-based object, ownership and field-level security', async () => {
     const mine = await s.records.create(maria, 'account', { name: 'Owned by Maria' });
     // Sales reps read all sales records but only edit their own.

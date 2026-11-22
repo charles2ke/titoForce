@@ -1,4 +1,4 @@
-import type { ObjectDef, ReportDef, ReportResult } from '@titoforce/shared';
+import type { MetricFn, ObjectDef, ReportDef, ReportResult } from '@titoforce/shared';
 import { useQuery } from '@tanstack/react-query';
 import { ChartColumn, Download, Filter, Pencil, RefreshCw, Rows3, Sigma } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router';
@@ -6,21 +6,31 @@ import { ApiError, api } from '../api.ts';
 import { describeFilter } from '../components/FilterEditor.tsx';
 import { ReportChart } from '../components/ReportChart.tsx';
 import { Button, Card, EmptyState, ErrorBanner, Loading, ObjectTile } from '../components/ui.tsx';
-import { fieldDef, formatDateTime, formatNumber, plural, relativeTime } from '../lib/format.ts';
+import { intlLocale, type MessageKey, t } from '../i18n/index.ts';
+import { fieldDef, formatDateTime, formatNumber, relativeTime } from '../lib/format.ts';
 import { useObjectDef, usePermissions } from '../lib/hooks.ts';
+import { localizeResult } from '../lib/reports.ts';
 
 type ReportResponse = { report: ReportDef; result: ReportResult };
 
-const SYSTEM_LABELS: Record<string, string> = { owner_id: 'Owner', created_at: 'Created Date', updated_at: 'Last Modified' };
-const OVERALL_LABELS = { count: 'Total', sum: 'Total', avg: 'Overall average', min: 'Overall minimum', max: 'Overall maximum' } as const;
+const SYSTEM_LABELS: Record<string, MessageKey> = { owner_id: 'common.owner', created_at: 'reports.createdDate', updated_at: 'common.lastModified' };
+const OVERALL_LABELS: Record<MetricFn, MessageKey> = {
+  count: 'common.total',
+  sum: 'common.total',
+  avg: 'reports.view.overallAverage',
+  min: 'reports.view.overallMinimum',
+  max: 'reports.view.overallMaximum',
+};
+
+const systemLabel = (field: string) => (Object.hasOwn(SYSTEM_LABELS, field) ? t(SYSTEM_LABELS[field]) : undefined);
 
 /** Column heading for the grouping, e.g. "Close Date (month)". */
 function groupLabel(def: ObjectDef | undefined, groupBy: NonNullable<ReportDef['groupBy']>): string {
   const f = def?.fields.find((x) => x.apiName === groupBy.field);
-  const label = SYSTEM_LABELS[groupBy.field] ?? (def && fieldDef(def, groupBy.field)?.label) ?? groupBy.field;
+  const label = systemLabel(groupBy.field) ?? (def && fieldDef(def, groupBy.field)?.label) ?? groupBy.field;
   const isDate =
     groupBy.field === 'created_at' || groupBy.field === 'updated_at' || (!!f && (f.type === 'date' || f.type === 'datetime' || (f.type === 'formula' && f.formulaType === 'date')));
-  return isDate ? `${label} (${groupBy.interval ?? 'month'})` : label;
+  return isDate ? t(`reports.view.groupInterval.${groupBy.interval ?? 'month'}`, { field: label }) : label;
 }
 
 function csvCell(v: string | number): string {
@@ -31,13 +41,13 @@ function csvCell(v: string | number): string {
 }
 
 function downloadCsv(report: ReportDef, result: ReportResult, heading: string) {
-  const header = report.groupBy ? [heading, result.metricLabel] : ['Metric', 'Value'];
+  const header = report.groupBy ? [heading, result.metricLabel] : [t('reports.view.metric'), t('common.value')];
   const lines = [header, ...result.rows.map((r) => [r.label, r.value])].map((cells) => cells.map(csvCell).join(','));
   const blob = new Blob([`\uFEFF${lines.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${report.name.trim().replace(/[^\p{L}\p{N} _-]+/gu, '').replace(/\s+/g, '-').toLowerCase() || 'report'}.csv`;
+  a.download = `${report.name.trim().replace(/[^\p{L}\p{N} _-]+/gu, '').replace(/\s+/g, '-').toLowerCase() || t('reports.view.csvFileName')}.csv`;
   document.body.append(a);
   a.click();
   a.remove();
@@ -50,7 +60,12 @@ function DataTable({ report, result, heading }: { report: ReportDef; result: Rep
   const share = (v: number) => (result.total ? formatNumber((v / result.total) * 100, 'percent', 1) : '—');
   const limited = !!report.limit && result.rows.length >= report.limit;
   return (
-    <Card title="Data" actions={<span className="text-xs text-slate-500">{plural(result.rows.length, 'group')}</span>} className="overflow-hidden" bodyClassName="overflow-x-auto">
+    <Card
+      title={t('reports.view.data')}
+      actions={<span className="text-xs text-slate-500">{t('reports.view.groupCount', { count: result.rows.length })}</span>}
+      className="overflow-hidden"
+      bodyClassName="overflow-x-auto"
+    >
       <table className="w-full text-sm">
         <thead className="bg-slate-50/70 text-left text-xs font-semibold text-slate-500 uppercase">
           <tr>
@@ -62,7 +77,7 @@ function DataTable({ report, result, heading }: { report: ReportDef; result: Rep
             </th>
             {showShare && (
               <th scope="col" className="w-32 px-4 py-2.5 text-right">
-                % of total
+                {t('reports.view.percentOfTotal')}
               </th>
             )}
           </tr>
@@ -71,7 +86,7 @@ function DataTable({ report, result, heading }: { report: ReportDef; result: Rep
           {result.rows.length === 0 && (
             <tr>
               <td colSpan={showShare ? 3 : 2} className="px-4 py-8 text-center text-slate-400">
-                No matching records
+                {t('reports.view.noMatchingRecords')}
               </td>
             </tr>
           )}
@@ -86,14 +101,14 @@ function DataTable({ report, result, heading }: { report: ReportDef; result: Rep
         <tfoot>
           <tr className="border-t border-slate-200 bg-slate-50/60">
             <th scope="row" className="px-4 py-2.5 text-left font-semibold text-slate-700">
-              {OVERALL_LABELS[report.metric.fn]}
+              {t(OVERALL_LABELS[report.metric.fn])}
             </th>
             <td className="px-4 py-2.5 text-right font-semibold text-slate-900 tabular-nums">{fmt(result.total)}</td>
-            {showShare && <td className="px-4 py-2.5 text-right font-semibold text-slate-500 tabular-nums">{result.total ? '100%' : '—'}</td>}
+            {showShare && <td className="px-4 py-2.5 text-right font-semibold text-slate-500 tabular-nums">{result.total ? formatNumber(100, 'percent', 1) : '—'}</td>}
           </tr>
         </tfoot>
       </table>
-      {limited && <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">Showing the first {report.limit} groups. The total covers all matching records.</p>}
+      {limited && <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">{t('reports.view.limited', { count: report.limit ?? 0 })}</p>}
     </Card>
   );
 }
@@ -114,23 +129,23 @@ export default function ReportView() {
         {notFound ? (
           <EmptyState
             icon={ChartColumn}
-            title="Report not found"
+            title={t('reports.notFound')}
             action={
               <Link to="/reports" className="text-sm font-medium text-indigo-600 hover:underline">
-                Back to reports
+                {t('reports.backToList')}
               </Link>
             }
           >
-            It may have been deleted, or you may not have access to its records.
+            {t('reports.view.notFoundMessage')}
           </EmptyState>
         ) : (
           <div className="mx-auto max-w-3xl space-y-4">
-            <ErrorBanner error={q.error ?? 'This report is not available.'} />
+            <ErrorBanner error={q.error ?? t('reports.view.unavailable')} />
             <div className="flex gap-2">
-              <Button onClick={() => navigate('/reports')}>Back to reports</Button>
+              <Button onClick={() => navigate('/reports')}>{t('reports.backToList')}</Button>
               {analyst && q.error instanceof ApiError && q.error.status === 400 && (
                 <Button variant="primary" icon={Pencil} onClick={() => navigate(`/reports/${id}/edit`)}>
-                  Fix report
+                  {t('reports.view.fix')}
                 </Button>
               )}
             </div>
@@ -140,9 +155,10 @@ export default function ReportView() {
     );
   }
 
-  const { report, result } = q.data;
-  const heading = report.groupBy ? groupLabel(def, report.groupBy) : 'Metric';
-  const asOf = new Date(q.dataUpdatedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const { report } = q.data;
+  const result = localizeResult(q.data.result, def, report);
+  const heading = report.groupBy ? groupLabel(def, report.groupBy) : t('reports.view.metric');
+  const asOf = new Date(q.dataUpdatedAt).toLocaleTimeString(intlLocale(), { hour: 'numeric', minute: '2-digit' });
 
   return (
     <div className="min-h-full">
@@ -152,7 +168,7 @@ export default function ReportView() {
           <div className="min-w-48 flex-1">
             <p className="text-xs font-medium text-slate-500">
               <Link to="/reports" className="hover:text-indigo-600 hover:underline">
-                Reports
+                {t('reports.title')}
               </Link>
               <span className="mx-1.5 text-slate-300">/</span>
               <Link to={`/o/${report.object}`} className="hover:text-indigo-600 hover:underline">
@@ -164,14 +180,14 @@ export default function ReportView() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button icon={RefreshCw} loading={q.isFetching} onClick={() => void q.refetch()}>
-              Refresh
+              {t('common.refresh')}
             </Button>
             <Button icon={Download} onClick={() => downloadCsv(report, result, heading)}>
-              Export CSV
+              {t('reports.view.exportCsv')}
             </Button>
             {analyst && (
               <Button variant="primary" icon={Pencil} onClick={() => navigate(`/reports/${report.id}/edit`)}>
-                Edit
+                {t('common.edit')}
               </Button>
             )}
           </div>
@@ -180,26 +196,28 @@ export default function ReportView() {
           <div className="flex max-w-full min-w-0 items-start gap-1.5">
             <dt>
               <Filter className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              <span className="sr-only">Filters</span>
+              <span className="sr-only">{t('reports.filters')}</span>
             </dt>
-            <dd className="min-w-0 break-words">{def ? describeFilter(def, report.filters) : report.filters?.rules.length ? plural(report.filters.rules.length, 'condition') : 'No conditions'}</dd>
+            <dd className="min-w-0 break-words">
+              {def ? describeFilter(def, report.filters) : report.filters?.rules.length ? t('reports.view.conditionCount', { count: report.filters.rules.length }) : t('reports.view.noConditions')}
+            </dd>
           </div>
           <div className="flex items-center gap-1.5">
             <dt>
               <Sigma className="size-3.5" aria-hidden />
-              <span className="sr-only">Metric</span>
+              <span className="sr-only">{t('reports.view.metric')}</span>
             </dt>
             <dd>{result.metricLabel}</dd>
           </div>
           <div className="flex items-center gap-1.5">
             <dt>
               <Rows3 className="size-3.5" aria-hidden />
-              <span className="sr-only">Grouping</span>
+              <span className="sr-only">{t('reports.view.grouping')}</span>
             </dt>
-            <dd>{report.groupBy ? `Grouped by ${heading}` : 'Not grouped'}</dd>
+            <dd>{report.groupBy ? t('reports.view.groupedBy', { field: heading }) : t('reports.view.notGrouped')}</dd>
           </div>
           <div className="flex items-center gap-1.5" title={formatDateTime(report.updatedAt)}>
-            <dt>Modified</dt>
+            <dt>{t('reports.view.modified')}</dt>
             <dd>{relativeTime(report.updatedAt)}</dd>
           </div>
         </dl>
@@ -224,7 +242,7 @@ export default function ReportView() {
             <DataTable report={report} result={result} heading={heading} />
           </>
         )}
-        <p className="text-xs text-slate-400">Results as of {asOf}, counting only the records you can access.</p>
+        <p className="text-xs text-slate-400">{t('reports.view.resultsAsOf', { time: asOf })}</p>
       </div>
     </div>
   );

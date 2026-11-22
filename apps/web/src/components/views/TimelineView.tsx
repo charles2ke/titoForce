@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router';
 import { api } from '../../api.ts';
+import { inSentence, intlLocale, t } from '../../i18n/index.ts';
 import { hex } from '../../lib/colors.ts';
 import { fieldDef, formatDate, parseDate, todayIso, toDateInput, valueOf } from '../../lib/format.ts';
 import { Button, EmptyState, ErrorBanner, IconButton, Loading } from '../ui.tsx';
@@ -49,14 +50,14 @@ export function TimelineView({ def, base, month, onMonth }: { def: ObjectDef; ba
     enabled: !!tl,
   });
 
-  if (!tl) return <ErrorBanner className="m-4" error={new Error(`${def.label} has no start/end dates configured for timelines.`)} />;
+  if (!tl) return <ErrorBanner className="m-4" error={new Error(t('views.timeline.notConfigured', { label: def.label }))} />;
 
-  const startLabel = fieldDef(def, tl.start)?.label ?? 'Start';
-  const endLabel = fieldDef(def, tl.end)?.label ?? 'End';
+  const startLabel = fieldDef(def, tl.start)?.label ?? t('views.timeline.start');
+  const endLabel = fieldDef(def, tl.end)?.label ?? t('views.timeline.end');
   const months = Array.from({ length: MONTHS_SHOWN }, (_, i) => {
     const m = new Date(first.getFullYear(), first.getMonth() + i, 1);
     const days = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
-    return { key: i, label: m.toLocaleDateString(undefined, { month: 'short', year: 'numeric' }), width: (days / span) * 100 };
+    return { key: i, label: m.toLocaleDateString(intlLocale(), { month: 'short', year: 'numeric' }), width: (days / span) * 100 };
   });
   const today = todayIso();
   const todayPos = today >= from && today <= to ? ((dayIndex(today, first) + 0.5) / span) * 100 : null;
@@ -75,17 +76,17 @@ export function TimelineView({ def, base, month, onMonth }: { def: ObjectDef; ba
     <div className="flex min-h-0 flex-1 flex-col p-4">
       <div className="mb-3 flex items-center gap-2">
         <h2 className="text-base font-semibold text-slate-900" aria-live="polite">
-          {months[0]!.label} – {months[MONTHS_SHOWN - 1]!.label}
+          {t('views.timeline.range', { start: months[0]!.label, end: months[MONTHS_SHOWN - 1]!.label })}
         </h2>
         <span className="text-xs text-slate-500">
           {startLabel} → {endLabel}
         </span>
         <div className="ml-auto flex items-center gap-1">
-          <IconButton icon={ChevronLeft} label="Earlier" onClick={() => onMonth(shiftMonth(monthKey, -1))} />
+          <IconButton icon={ChevronLeft} label={t('views.timeline.earlier')} onClick={() => onMonth(shiftMonth(monthKey, -1))} />
           <Button size="sm" onClick={() => onMonth(currentMonth())}>
-            Today
+            {t('views.today')}
           </Button>
-          <IconButton icon={ChevronRight} label="Later" onClick={() => onMonth(shiftMonth(monthKey, 1))} />
+          <IconButton icon={ChevronRight} label={t('views.timeline.later')} onClick={() => onMonth(shiftMonth(monthKey, 1))} />
         </div>
       </div>
       {query.error ? (
@@ -93,7 +94,7 @@ export function TimelineView({ def, base, month, onMonth }: { def: ObjectDef; ba
       ) : query.isLoading ? (
         <Loading />
       ) : !query.data?.records.length ? (
-        <EmptyState title={`No ${def.pluralLabel.toLowerCase()} in this period`}>Use the arrows to look at other months.</EmptyState>
+        <EmptyState title={t('views.timeline.emptyTitle', { plural: inSentence(def.pluralLabel) })}>{t('views.timeline.emptyBody')}</EmptyState>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white">
           <div className="min-w-[48rem]">
@@ -115,7 +116,7 @@ export function TimelineView({ def, base, month, onMonth }: { def: ObjectDef; ba
                   <li key={r.id} className="flex items-center hover:bg-slate-50/70">
                     <div className="w-56 shrink-0 truncate border-r border-slate-200 px-3 py-2 text-sm">
                       <Link to={`/r/${r.id}`} className="font-medium text-slate-800 hover:text-indigo-700 hover:underline">
-                        {r.name || '(no name)'}
+                        {r.name || t('views.noName')}
                       </Link>
                     </div>
                     <div className="relative h-9 flex-1">
@@ -126,7 +127,7 @@ export function TimelineView({ def, base, month, onMonth }: { def: ObjectDef; ba
                       {b && (
                         <Link
                           to={`/r/${r.id}`}
-                          title={`${r.name}: ${formatDate(b.start)} – ${b.end ? formatDate(b.end) : 'no end date'}`}
+                          title={b.end ? t('views.timeline.barTitle', { name: r.name, start: formatDate(b.start), end: formatDate(b.end) }) : t('views.timeline.barTitleNoEnd', { name: r.name, start: formatDate(b.start) })}
                           className="absolute top-1.5 h-6 truncate px-2 text-xs leading-6 font-medium text-white shadow-xs hover:brightness-110"
                           style={{
                             left: pct(b.left),
@@ -147,11 +148,11 @@ export function TimelineView({ def, base, month, onMonth }: { def: ObjectDef; ba
         </div>
       )}
       {query.data && query.data.total > query.data.records.length && (
-        <p className="mt-2 text-xs text-amber-700">Showing the first {query.data.records.length.toLocaleString()} of {query.data.total.toLocaleString()} records in this period.</p>
+        <p className="mt-2 text-xs text-amber-700">{t('views.timeline.truncated', { shown: query.data.records.length, total: query.data.total })}</p>
       )}
       {todayPos !== null && (
         <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
-          <span className="inline-block h-3 w-px bg-rose-400" aria-hidden /> Today
+          <span className="inline-block h-3 w-px bg-rose-400" aria-hidden /> {t('views.today')}
         </p>
       )}
     </div>

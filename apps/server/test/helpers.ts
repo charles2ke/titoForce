@@ -5,6 +5,8 @@ import { loadConfig } from '../src/config.ts';
 import type { Principal } from '../src/platform/principal.ts';
 import { DEMO_DOMAIN, seedIfNeeded } from '../src/seed/index.ts';
 import { createServices, type ServiceOptions, type Services } from '../src/services.ts';
+import { dropAllTenantDatabases } from '../src/tenancy/locator.ts';
+import { Platform } from '../src/tenancy/platform.ts';
 
 /**
  * Fresh database seeded with the demo company: in-memory SQLite, or a new schema in the PostgreSQL database named by
@@ -23,6 +25,27 @@ export async function createTestServices(opts: ServiceOptions & { env?: Record<s
   await seedIfNeeded(s);
   await s.jobs.drain();
   return s;
+}
+
+/**
+ * A platform (organizations, sandboxes) whose default organization holds the demo company, on a fresh database like
+ * `createTestServices`. `close()` also drops the databases of every organization created by the test.
+ */
+export async function createTestPlatform(opts: ServiceOptions & { env?: Record<string, string> } = {}): Promise<Platform> {
+  const { env, ...serviceOpts } = opts;
+  const db = await testDatabase();
+  const config = loadConfig({ TITO_DATABASE_URL: db.url, TITO_SEED_DEMO: 'true', ...env });
+  const platform = await Platform.open(config, serviceOpts);
+  const closePlatform = platform.close.bind(platform);
+  platform.close = async () => {
+    await closePlatform();
+    await dropAllTenantDatabases(config);
+    await db.drop();
+  };
+  const s = await platform.servicesFor(platform.defaultTenant());
+  await seedIfNeeded(s);
+  await s.jobs.drain();
+  return platform;
 }
 
 /** Each PostgreSQL test database is a new schema, so tests stay isolated like the in-memory SQLite default. */

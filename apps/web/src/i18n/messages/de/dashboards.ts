@@ -1,0 +1,76 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  title: 'Dashboards',
+  subtitle: 'Sammlungen von Berichtsdiagrammen. Alle sehen die Ergebnisse für die Datensätze, auf die sie zugreifen können.',
+  newDashboard: 'Neues Dashboard',
+
+  list: {
+    emptyTitle: 'Noch keine Dashboards',
+    emptyAnalyst: 'Erstellen Sie ein Dashboard, um mehrere Berichtsdiagramme auf einer Seite zusammenzufassen.',
+    emptyViewer: 'Hier werden Dashboards angezeigt, die Ihre Analysten und Administratoren erstellt haben.',
+    noDescription: 'Keine Beschreibung',
+    noWidgets: 'Noch keine Widgets',
+    widgetCount: { one: '{count} Widget', other: '{count} Widgets' },
+    lastModified: 'Zuletzt geändert: {date}',
+    updated: 'Aktualisiert {time}',
+  },
+
+  create: {
+    namePlaceholder: 'z. B. Vertriebsübersicht',
+    hint: 'Anschließend können Sie dem Dashboard Berichte hinzufügen.',
+    created: 'Dashboard „{name}“ erstellt',
+  },
+
+  view: {
+    notFound: 'Dashboard nicht gefunden',
+    notFoundMessage: 'Es wurde möglicherweise gelöscht.',
+    backToList: 'Zurück zu den Dashboards',
+    loadFailed: 'Dieses Dashboard konnte nicht geladen werden.',
+    deleteDashboard: 'Dashboard löschen',
+    deleteTitle: 'Dashboard löschen?',
+    deleteMessage: '„{name}“ wird endgültig gelöscht. Die zugehörigen Berichte bleiben erhalten.',
+    deleteHomeOf: 'Es ist das Startseiten-Dashboard von {apps}.',
+    deleted: 'Dashboard „{name}“ gelöscht',
+    dataAsOf: 'Datenstand: {time}. Jedes Widget zählt nur die Datensätze, auf die Sie zugreifen können.',
+  },
+
+  editor: {
+    title: 'Dashboard bearbeiten',
+    save: 'Dashboard speichern',
+    saved: 'Dashboard „{name}“ gespeichert',
+    nameRequired: 'Name ist erforderlich',
+    discardTitle: 'Änderungen verwerfen?',
+    discardMessage: 'Ihre Änderungen an diesem Dashboard wurden nicht gespeichert.',
+    discard: 'Verwerfen',
+    app: 'App',
+    appHelp: 'Listet das Dashboard unter einer App auf.',
+    widgets: 'Widgets',
+    noWidgets: 'Noch keine Widgets. Fügen Sie unten einen Bericht hinzu.',
+    deletedReport: 'Gelöschter Bericht. Er wird beim Speichern entfernt.',
+    report: 'Bericht',
+    loadingReport: 'Bericht wird geladen…',
+    usesReportName: 'verwendet den Berichtsnamen als Titel',
+    widgetTitle: 'Titel von Widget {number}',
+    widgetSize: 'Größe von Widget {number}',
+    moveUp: 'Widget {number} nach oben verschieben',
+    moveDown: 'Widget {number} nach unten verschieben',
+    remove: 'Widget {number} entfernen',
+    sizes: {
+      small: 'Klein (⅓ Breite)',
+      medium: 'Mittel (⅔ Breite)',
+      full: 'Volle Breite',
+    },
+    addReport: 'Bericht hinzufügen',
+    addReportOption: 'Bericht hinzufügen…',
+    loadingReports: 'Berichte werden geladen…',
+    noReports: 'Keine Berichte verfügbar',
+    maxWidgets: 'Maximal {max} Widgets erreicht',
+    deletedReportsRemoved: {
+      one: '{count} gelöschter Bericht wird beim Speichern entfernt.',
+      other: '{count} gelöschte Berichte werden beim Speichern entfernt.',
+    },
+    layoutPreview: 'Layoutvorschau',
+    smallScreens: 'Auf kleinen Bildschirmen nimmt jedes Widget die volle Breite ein.',
+  },
+} satisfies Translation['dashboards'];
