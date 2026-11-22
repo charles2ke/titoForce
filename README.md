@@ -212,7 +212,8 @@ and calendars, and add their phone number, in **My settings**.
   attachments.
 - **IMAP mailboxes** need no server configuration. People enter their IMAP server, and optionally an SMTP server to
   send email, and titoForce signs in to both before saving. Unless `TITO_ALLOW_PRIVATE_NETWORK` is set, passwords are
-  only sent over TLS.
+  only sent over TLS, and only the standard mail ports are allowed: 143 and 993 for IMAP, and 25, 465, 587 and 2525
+  for SMTP.
 - **Twilio**: point the "A call comes in" webhook of a voice-capable number at
   `<TITO_PUBLIC_URL>/api/telephony/twilio/voice` (HTTP POST). Twilio signs its requests over this URL, so
   `TITO_PUBLIC_URL` must match the address configured in Twilio exactly.
