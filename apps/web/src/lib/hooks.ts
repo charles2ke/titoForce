@@ -98,7 +98,7 @@ export function invalidateRecordData(qc: QueryClient): Promise<void> {
 /** Refreshes metadata after setup changes. */
 export function invalidateMetadata(qc: QueryClient): Promise<void> {
   // Page layouts follow field changes: the server places new fields and drops deleted ones.
-  return Promise.all(['objects', 'apps', 'views', 'users', 'roles', 'layout', 'layouts'].map((k) => qc.invalidateQueries({ queryKey: [k] }))).then(() => undefined);
+  return Promise.all(['objects', 'apps', 'views', 'users', 'roles', 'layout', 'layouts', 'related'].map((k) => qc.invalidateQueries({ queryKey: [k] }))).then(() => undefined);
 }
 
 // ---------- current app (Salesforce-style app switcher) ----------

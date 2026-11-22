@@ -1,6 +1,32 @@
 import { expect, test } from '@playwright/test';
 import { signIn, snap } from './helpers.ts';
 
+test('open related lists refresh when the layout changes', async ({ page }) => {
+  await signIn(page, 'admin');
+  const { layouts } = (await (await page.request.get('/api/objects/account/layouts')).json()) as {
+    layouts: { id: string; isDefault: boolean; relatedLists: string[] }[];
+  };
+  const layout = layouts.find((l) => l.isDefault)!;
+  expect(layout.relatedLists).toContain('contact.account');
+  const account = ((await (await page.request.post('/api/records/account/query', { data: { pageSize: 1 } })).json()) as { records: { id: string }[] }).records[0]!;
+  const socket = page.waitForEvent('websocket');
+  await page.goto(`/r/${account.id}?tab=related`);
+  await socket;
+  const contacts = page.getByRole('heading', { name: /Contacts/ });
+  await expect(contacts).toBeVisible();
+  let savedId = layout.id;
+  try {
+    const updated = await page.request.put(`/api/objects/account/layouts/${layout.id}`, {
+      data: { ...layout, relatedLists: layout.relatedLists.filter((id) => id !== 'contact.account') },
+    });
+    expect(updated.ok()).toBe(true);
+    savedId = ((await updated.json()) as { id: string }).id;
+    await expect(contacts).toHaveCount(0);
+  } finally {
+    expect((await page.request.put(`/api/objects/account/layouts/${savedId}`, { data: layout })).ok()).toBe(true);
+  }
+});
+
 test('an administrator drags fields into a page layout for one team', async ({ page }) => {
   const layoutName = `Marketing leads ${Date.now() % 10_000}`;
   await signIn(page, 'admin');
