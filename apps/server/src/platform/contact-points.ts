@@ -81,7 +81,7 @@ export interface ContactMatch {
  * Finds the best record for each email address or phone number (keys are normalized values): contacts first, then
  * leads, accounts, candidates and other objects; most recently updated wins within an object.
  */
-export async function matchContacts(db: Db, kind: ContactKind, values: string[]): Promise<Map<string, ContactMatch>> {
+export async function matchContacts(db: Db, kind: ContactKind, values: string[], principal?: Principal): Promise<Map<string, ContactMatch>> {
   const wanted = [...new Set(values.map((v) => normalizeContact(kind, v)).filter((v): v is string => !!v))];
   const best = new Map<string, ContactMatch & { rank: number; updatedAt: string }>();
   for (const part of chunk(wanted, 200)) {
@@ -91,6 +91,7 @@ export async function matchContacts(db: Db, kind: ContactKind, values: string[])
       [kind, ...part],
     );
     for (const r of rows) {
+      if (principal && !canRead(principal, r.object_api_name, r.owner_id)) continue;
       const rank = PRIORITY.includes(r.object_api_name) ? PRIORITY.indexOf(r.object_api_name) : PRIORITY.length;
       const current = best.get(r.value);
       if (!current || rank < current.rank || (rank === current.rank && r.updated_at > current.updatedAt)) {
@@ -103,7 +104,7 @@ export async function matchContacts(db: Db, kind: ContactKind, values: string[])
 
 /** The match of the first value (in the order given) whose record the principal can read. */
 export async function readableMatch(db: Db, principal: Principal, kind: ContactKind, values: string[]): Promise<ContactMatch | null> {
-  const matches = await matchContacts(db, kind, values);
+  const matches = await matchContacts(db, kind, values, principal);
   for (const v of values) {
     const m = matches.get(normalizeContact(kind, v) ?? '');
     if (m && canRead(principal, m.object, m.ownerId)) return m;

@@ -271,7 +271,7 @@ describe('Google accounts', () => {
 
     // The first sync looked back two weeks; spam was never downloaded.
     const list = http.find('GET', /gmail\/v1\/users\/me\/messages$/)[0]!;
-    expect(list.url.searchParams.get('q')).toBe('newer_than:14d -in:spam -in:trash -in:drafts -in:chats');
+    expect(list.url.searchParams.get('q')).toMatch(/^after:\d+ -in:spam -in:trash -in:drafts -in:chats$/);
     expect(list.headers.get('authorization')).toBe('Bearer g-access-1');
     expect(http.find('GET', /messages\/m2$/).map((r) => r.url.searchParams.get('format'))).toEqual(['metadata']);
 
@@ -326,6 +326,47 @@ describe('Google accounts', () => {
     }
     const since = Math.floor(Date.parse(mailSyncedAt!) / 1000) - 3600;
     expect(http.find('GET', /gmail\/v1\/users\/me\/messages$/).at(-1)!.url.searchParams.get('q')).toBe(`after:${since} -in:spam -in:trash -in:drafts -in:chats`);
+  });
+
+  it('claims an account before awaiting its lookup so overlapping syncs are rejected', async () => {
+    const accounts = s.integrations.accounts;
+    const originalGet = accounts.get.bind(accounts);
+    let entered!: () => void;
+    let release!: (account: Awaited<ReturnType<typeof originalGet>>) => void;
+    const lookupStarted = new Promise<void>((resolve) => { entered = resolve; });
+    const lookup = new Promise<Awaited<ReturnType<typeof originalGet>>>((resolve) => { release = resolve; });
+    accounts.get = async () => {
+      entered();
+      return lookup;
+    };
+
+    const pending = s.integrations.syncAccount(accountId);
+    try {
+      await lookupStarted;
+      expect(accounts.syncing.has(accountId)).toBe(true);
+      expect(await s.integrations.syncAccount(accountId)).toBeNull();
+    } finally {
+      accounts.get = originalGet;
+      release(await originalGet(accountId));
+    }
+    expect(await pending).not.toBeNull();
+  });
+
+  it('releases the sync claim when an account lookup is missing or fails', async () => {
+    const accounts = s.integrations.accounts;
+    const originalGet = accounts.get.bind(accounts);
+    accounts.get = async (id) => {
+      if (id === 'missing-account') return undefined;
+      throw new Error('lookup failed');
+    };
+    try {
+      expect(await s.integrations.syncAccount('missing-account')).toBeNull();
+      expect(accounts.syncing.has('missing-account')).toBe(false);
+      await expect(s.integrations.syncAccount(accountId)).rejects.toThrow('lookup failed');
+      expect(accounts.syncing.has(accountId)).toBe(false);
+    } finally {
+      accounts.get = originalGet;
+    }
   });
 
   it('sends through Gmail and keeps the Message-ID Gmail gave the email', async () => {

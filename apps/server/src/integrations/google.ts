@@ -35,20 +35,43 @@ export async function gmailSend(f: typeof fetch, token: string, raw: Buffer): Pr
   }
 }
 
-/** Ids of messages matching a Gmail search, oldest first (at most `max`, the most recent ones). */
-async function listIds(f: typeof fetch, token: string, q: string, max: number): Promise<string[]> {
+/** Ids of messages matching a Gmail search, with a resumable page cursor. */
+interface GmailSearchCursor {
+  query: string;
+  offset?: number;
+  pageToken?: string;
+  nextPageToken?: string;
+}
+
+async function searchIds(
+  f: typeof fetch,
+  token: string,
+  cursor: GmailSearchCursor,
+  max: number,
+): Promise<{ ids: string[]; cursor: GmailSearchCursor | null }> {
   const ids: string[] = [];
-  let pageToken: string | undefined;
-  do {
+  let pageToken = cursor.pageToken;
+  let nextPageToken = cursor.nextPageToken;
+  let offset = cursor.offset ?? 0;
+  while (ids.length < max) {
     const url = new URL(`${GMAIL}/messages`);
-    url.searchParams.set('q', q);
-    url.searchParams.set('maxResults', String(Math.min(100, max - ids.length)));
+    url.searchParams.set('q', cursor.query);
+    url.searchParams.set('maxResults', '100');
     if (pageToken) url.searchParams.set('pageToken', pageToken);
     const page = await providerJson<{ messages?: { id: string }[]; nextPageToken?: string }>(f, 'google', url.toString(), { token });
-    ids.push(...(page.messages ?? []).map((m) => m.id));
-    pageToken = page.nextPageToken;
-  } while (pageToken && ids.length < max);
-  return ids.slice(0, max).reverse();
+    const pageIds = (page.messages ?? []).map((m) => m.id).reverse();
+    nextPageToken = page.nextPageToken;
+    const selected = pageIds.slice(offset, offset + max - ids.length);
+    ids.push(...selected);
+    offset += selected.length;
+    if (offset < pageIds.length) return { ids, cursor: { ...cursor, pageToken, nextPageToken, offset } };
+    if (!nextPageToken) return { ids, cursor: null };
+    pageToken = nextPageToken;
+    nextPageToken = undefined;
+    offset = 0;
+    if (ids.length >= max) return { ids, cursor: { ...cursor, pageToken, offset } };
+  }
+  return { ids, cursor: { ...cursor, pageToken, nextPageToken, offset } };
 }
 
 /** Ids of messages added since a history id, oldest first, and the next history page if capped. */
@@ -79,10 +102,17 @@ async function historyIds(
  */
 export async function syncGmail(f: typeof fetch, token: string, state: SyncState, sink: MailSink, budget: number): Promise<SyncState> {
   const profile = await providerJson<{ historyId: string }>(f, 'google', `${GMAIL}/profile`, { token });
-  let ids: string[];
+  let ids: string[] = [];
   let next: SyncState['gmail'] = { historyId: profile.historyId };
   const cursor = state.gmail;
-  if (cursor?.historyId) {
+  const search = async (historyId: string, q: string, page?: GmailSearchCursor) => {
+    const result = await searchIds(f, token, page ?? { query: q }, budget);
+    ids = result.ids;
+    next = { historyId, ...(result.cursor ? { search: result.cursor } : {}) };
+  };
+  if (cursor?.search) {
+    await search(cursor.historyId, cursor.search.query, cursor.search);
+  } else if (cursor?.historyId) {
     try {
       const { ids: all, nextPageToken, complete } = await historyIds(f, token, cursor.historyId, cursor.pageToken);
       const offset = cursor.offset ?? 0;
@@ -101,10 +131,11 @@ export async function syncGmail(f: typeof fetch, token: string, state: SyncState
       // Gmail keeps history for at least a week, but sometimes only for hours; then fall back to a search since the last sync.
       if (!(err instanceof ProviderError && err.upstream === 404)) throw err;
       const since = Math.floor((Date.parse(state.mailSyncedAt ?? '') || Date.now() - FIRST_SYNC_DAYS * 86_400_000) / 1000) - 3600;
-      ids = await listIds(f, token, `after:${since} ${SKIP_QUERY}`, budget);
+      await search(profile.historyId, `after:${since} ${SKIP_QUERY}`);
     }
   } else {
-    ids = await listIds(f, token, `newer_than:${FIRST_SYNC_DAYS}d ${SKIP_QUERY}`, budget);
+    const since = Math.floor((Date.now() - FIRST_SYNC_DAYS * 86_400_000) / 1000);
+    await search(profile.historyId, `after:${since} ${SKIP_QUERY}`);
   }
 
   for (const id of ids) {
@@ -198,10 +229,10 @@ export async function googleEvents(f: typeof fetch, token: string, from: Date, t
   return out;
 }
 
-const googleBody = (ev: EventInput) => ({
+const googleBody = (ev: EventInput, clearEmpty = false) => ({
   summary: ev.title,
-  description: ev.description ?? undefined,
-  location: ev.location ?? undefined,
+  description: ev.description ?? (clearEmpty ? '' : undefined),
+  location: ev.location ?? (clearEmpty ? '' : undefined),
   start: { dateTime: ev.start },
   end: { dateTime: ev.end },
   attendees: ev.attendees.map((email) => ({ email })),
@@ -215,7 +246,7 @@ export async function googleCreateEvent(f: typeof fetch, token: string, ev: Even
 }
 
 export async function googleUpdateEvent(f: typeof fetch, token: string, providerId: string, ev: EventInput): Promise<void> {
-  await providerJson(f, 'google', `${CALENDAR}/${encodeURIComponent(providerId)}?${sendUpdates(ev)}`, { method: 'PATCH', token, json: googleBody(ev) });
+  await providerJson(f, 'google', `${CALENDAR}/${encodeURIComponent(providerId)}?${sendUpdates(ev)}`, { method: 'PATCH', token, json: googleBody(ev, true) });
 }
 
 export async function googleDeleteEvent(f: typeof fetch, token: string, providerId: string, sendInvites: boolean): Promise<void> {

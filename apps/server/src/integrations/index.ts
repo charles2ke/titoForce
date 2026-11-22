@@ -163,10 +163,10 @@ export class IntegrationService {
   /** Reads new mail and calendar events of an account now. Null when the account is gone or already syncing. */
   async syncAccount(id: string): Promise<SyncResult | null> {
     if (this.accounts.syncing.has(id)) return null;
-    const account = await this.accounts.get(id);
-    if (!account) return null;
     this.accounts.syncing.add(id);
     try {
+      const account = await this.accounts.get(id);
+      if (!account) return null;
       const errors: string[] = [];
       let stop = false;
       const attempt = async <T>(label: string, fn: (a: Account) => Promise<T>): Promise<T | null> => {
