@@ -41,8 +41,8 @@ export interface StoredSettings extends ConnectedAccountSettings {
 /** Sync cursors, per provider. */
 export interface SyncState {
   imap?: Record<string, { uidValidity: string; lastUid: number }>;
-  /** Gmail history cursor; `offset` counts the changes after it already read when a run stopped early. */
-  gmail?: { historyId: string; offset?: number };
+  /** Gmail history cursor; `offset` counts changes already read from the current page range. */
+  gmail?: { historyId: string; offset?: number; pageToken?: string; nextPageToken?: string };
   /** Microsoft Graph delta (or next page) links per mail folder. */
   graph?: Record<string, string>;
   /** When mail was last fetched (fallback window for lost cursors). */

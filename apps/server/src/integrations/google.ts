@@ -51,10 +51,15 @@ async function listIds(f: typeof fetch, token: string, q: string, max: number): 
   return ids.slice(0, max).reverse();
 }
 
-/** Ids of messages added since a history id, oldest first. */
-async function historyIds(f: typeof fetch, token: string, startHistoryId: string): Promise<string[]> {
+/** Ids of messages added since a history id, oldest first, and the next history page if capped. */
+async function historyIds(
+  f: typeof fetch,
+  token: string,
+  startHistoryId: string,
+  startPageToken?: string,
+): Promise<{ ids: string[]; nextPageToken?: string; complete: boolean }> {
   const ids: string[] = [];
-  let pageToken: string | undefined;
+  let pageToken = startPageToken;
   do {
     const url = new URL(`${GMAIL}/history`);
     url.searchParams.set('startHistoryId', startHistoryId);
@@ -65,7 +70,7 @@ async function historyIds(f: typeof fetch, token: string, startHistoryId: string
     for (const h of page.history ?? []) for (const m of h.messagesAdded ?? []) if (!ids.includes(m.message.id)) ids.push(m.message.id);
     pageToken = page.nextPageToken;
   } while (pageToken && ids.length < 5000);
-  return ids;
+  return { ids, nextPageToken: pageToken, complete: !pageToken };
 }
 
 /**
@@ -79,10 +84,19 @@ export async function syncGmail(f: typeof fetch, token: string, state: SyncState
   const cursor = state.gmail;
   if (cursor?.historyId) {
     try {
-      const all = await historyIds(f, token, cursor.historyId);
+      const { ids: all, nextPageToken, complete } = await historyIds(f, token, cursor.historyId, cursor.pageToken);
       const offset = cursor.offset ?? 0;
       ids = all.slice(offset, offset + budget);
-      if (offset + ids.length < all.length) next = { historyId: cursor.historyId, offset: offset + ids.length };
+      if (offset + ids.length < all.length) {
+        next = {
+          historyId: cursor.historyId,
+          pageToken: cursor.pageToken,
+          nextPageToken: cursor.nextPageToken ?? nextPageToken,
+          offset: offset + ids.length,
+        };
+      } else if (!complete) {
+        next = { historyId: cursor.historyId, pageToken: cursor.nextPageToken ?? nextPageToken };
+      }
     } catch (err) {
       // Gmail keeps history for at least a week, but sometimes only for hours; then fall back to a search since the last sync.
       if (!(err instanceof ProviderError && err.upstream === 404)) throw err;
