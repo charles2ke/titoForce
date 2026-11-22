@@ -19,7 +19,7 @@ export interface RenderedWidget extends DashboardWidget {
 export function useDashboard(id: string | null | undefined) {
   return useQuery({
     queryKey: ['dashboard', id],
-    queryFn: () => api.get<{ dashboard: DashboardDef; widgets: RenderedWidget[] }>(`/api/dashboards/${encodeURIComponent(id ?? '')}`),
+    queryFn: () => api.get<{ dashboard: DashboardDef; widgets: RenderedWidget[] }>(`/api/dashboards/${encodeURIComponent(id ?? '')}?deferLabelLimit=1`),
     enabled: !!id,
   });
 }

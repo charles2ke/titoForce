@@ -118,7 +118,7 @@ export default function ReportView() {
   const perms = usePermissions();
   const navigate = useNavigate();
   const analyst = perms.canManageAutomations;
-  const q = useQuery({ queryKey: ['report', id], queryFn: () => api.get<ReportResponse>(`/api/reports/${encodeURIComponent(id)}`), enabled: !!id });
+  const q = useQuery({ queryKey: ['report', id], queryFn: () => api.get<ReportResponse>(`/api/reports/${encodeURIComponent(id)}?deferLabelLimit=1`), enabled: !!id });
   const { def } = useObjectDef(q.data?.report.object);
 
   if (q.isLoading) return <Loading />;

@@ -2,7 +2,7 @@ import type { ObjectDef, ReportDef, ReportResult, ReportRow } from '@titoforce/s
 import { intlLocale, t } from '../i18n/index.ts';
 import { fieldDef, optionLabel } from './format.ts';
 
-type Spec = Pick<ReportDef, 'metric' | 'groupBy' | 'sort'>;
+type Spec = Pick<ReportDef, 'metric' | 'groupBy' | 'sort' | 'limit'>;
 
 function monthLabel(key: string): string {
   const [year, month] = key.split('-').map(Number);
@@ -15,7 +15,7 @@ function monthLabel(key: string): string {
  * English and picklist groups with their stored values; record and user names are kept as they are.
  */
 export function localizeResult(result: ReportResult, def: ObjectDef | undefined, spec: Spec): ReportResult {
-  if (!def) return result;
+  if (!def) return spec.groupBy && spec.sort === 'label' && spec.limit && spec.limit > 0 ? { ...result, rows: result.rows.slice(0, spec.limit) } : result;
   const metricField = spec.metric.fn === 'count' ? undefined : fieldDef(def, spec.metric.field ?? '');
   const metricLabel =
     spec.metric.fn === 'count' ? t('reports.summary.recordCount') : metricField ? t(`reports.summary.${spec.metric.fn}`, { field: metricField.label }) : result.metricLabel;
@@ -32,5 +32,5 @@ export function localizeResult(result: ReportResult, def: ObjectDef | undefined,
     return r;
   });
   if (spec.sort === 'label') rows.sort((a, b) => a.label.localeCompare(b.label, intlLocale()));
-  return { ...result, metricLabel, rows };
+  return { ...result, metricLabel, rows: spec.sort === 'label' && spec.limit && spec.limit > 0 ? rows.slice(0, spec.limit) : rows };
 }

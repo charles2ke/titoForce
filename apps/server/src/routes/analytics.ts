@@ -23,12 +23,12 @@ export function analyticsRoutes(app: FastifyInstance, s: Services): void {
   });
 
   /** Runs a saved report with the caller's record access. */
-  app.get('/api/reports/:id', async (req) => s.analytics.runReport(principalOf(req), params(req).id!));
+  app.get('/api/reports/:id', async (req) => s.analytics.runReport(principalOf(req), params(req).id!, query(req).deferLabelLimit === '1'));
 
   /** Runs an unsaved report definition (report builder preview). */
   app.post('/api/reports/preview', async (req) => {
     const spec = parse(schemas.reportPreview, req.body);
-    return s.analytics.aggregate(principalOf(req), spec.object, spec);
+    return s.analytics.aggregate(principalOf(req), spec.object, spec, query(req).deferLabelLimit === '1');
   });
 
   app.post('/api/reports', async (req, reply) => {
@@ -57,7 +57,7 @@ export function analyticsRoutes(app: FastifyInstance, s: Services): void {
   });
 
   /** Dashboard with every widget's report evaluated for the caller (widgets fail individually). */
-  app.get('/api/dashboards/:id', async (req) => s.analytics.renderDashboard(principalOf(req), params(req).id!));
+  app.get('/api/dashboards/:id', async (req) => s.analytics.renderDashboard(principalOf(req), params(req).id!, query(req).deferLabelLimit === '1'));
 
   app.post('/api/dashboards', async (req, reply) => {
     const p = analyst(req);

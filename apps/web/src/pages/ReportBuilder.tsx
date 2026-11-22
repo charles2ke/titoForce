@@ -180,7 +180,7 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
   const debounced = useDebounced(specJson, 400);
   const preview = useQuery({
     queryKey: ['report-preview', debounced],
-    queryFn: () => api.post<ReportResult>('/api/reports/preview', JSON.parse(debounced) as Spec),
+    queryFn: () => api.post<ReportResult>('/api/reports/preview?deferLabelLimit=1', JSON.parse(debounced) as Spec),
     placeholderData: keepPreviousData,
     enabled: specValid,
   });
@@ -427,7 +427,7 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
               <div className={cx('transition-opacity', preview.isPlaceholderData && 'opacity-60')}>
                 <ReportChart chart={draft.chart} result={previewResult} height={300} />
                 <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
-                  {t('reports.builder.previewRows', { count: preview.data.rows.length })} ·{' '}
+                  {t('reports.builder.previewRows', { count: previewResult.rows.length })} ·{' '}
                   {tx(previewFn === 'count' || previewFn === 'sum' ? 'reports.builder.previewTotal' : 'reports.builder.previewOverall', {
                     value: <span className="font-medium text-slate-700 tabular-nums">{formatNumber(preview.data.total, preview.data.format)}</span>,
                   })}
