@@ -122,7 +122,10 @@ export default function SetupIntegrations() {
             <Section icon={Mail} title="Microsoft 365" status={<Status on={s.microsoft} />}>
               <p>Outlook mail and calendar through Microsoft Graph. Register an app in Microsoft Entra ID with a client secret and this Web redirect URI:</p>
               <CopyField value={s.oauthRedirects.microsoft} label="Microsoft redirect URI" />
-              <p className="text-xs text-slate-500">Delegated permissions: User.Read, Mail.Read, Mail.Send, Calendars.ReadWrite and offline_access.</p>
+              <p className="text-xs text-slate-500">
+                Delegated permissions: User.Read, Mail.Read, Mail.Send, Calendars.ReadWrite and offline_access. Unless TITO_MICROSOFT_TENANT is set to your tenant ID, the app
+                must accept accounts in any organizational directory.
+              </p>
               <Env names={['TITO_MICROSOFT_CLIENT_ID', 'TITO_MICROSOFT_CLIENT_SECRET', 'TITO_MICROSOFT_TENANT']} />
             </Section>
           </div>
