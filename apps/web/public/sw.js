@@ -40,7 +40,7 @@ async function navigate(request) {
   try {
     const response = await fetch(request);
     if (response.ok && !response.redirected && response.headers.get('content-type')?.includes('text/html')) {
-      await (await caches.open(SHELL)).put('/', response.clone());
+      await caches.open(SHELL).then((cache) => cache.put('/', response.clone())).catch(() => undefined);
     }
     return response;
   } catch (err) {
@@ -57,9 +57,13 @@ async function asset(request) {
   if (cached) return cached;
   const response = await fetch(request);
   if (response.ok) {
-    await cache.put(request, response.clone());
-    const keys = await cache.keys();
-    for (const key of keys.slice(0, Math.max(0, keys.length - MAX_ASSETS))) await cache.delete(key);
+    try {
+      await cache.put(request, response.clone());
+      const keys = await cache.keys();
+      for (const key of keys.slice(0, Math.max(0, keys.length - MAX_ASSETS))) await cache.delete(key);
+    } catch {
+      // Cache writes and eviction must not block a successful network response.
+    }
   }
   return response;
 }
