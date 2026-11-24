@@ -138,7 +138,7 @@ export function authRoutes(app: FastifyInstance, s: Services): void {
     return { ...state, required: !!a.permissions.requireMfa, hasPassword: await s.users.hasPassword(a.user.id) };
   });
 
-  app.post('/api/auth/mfa/setup', async (req) => {
+  app.post('/api/auth/mfa/setup', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
     const a = auth(req);
     if (!(await s.users.hasPassword(a.user.id))) throw badRequest('You sign in with single sign-on, so your identity provider handles two-factor authentication');
     return s.mfa.beginEnrollment(a.user.id, a.user.email);
