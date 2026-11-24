@@ -283,6 +283,7 @@ export class UserService {
         if (!(await this.mfa.verify(ch.userId, code))) throw invalidCode();
       } else {
         recoveryCodes = await this.mfa.completeEnrollment(ch.userId, code);
+        await this.revokeOtherSessions(ch.userId);
       }
     } catch (err) {
       if (err instanceof AppError && err.code === 'invalid_code' && !(await this.challenges.fail(ch.id, MFA_MAX_ATTEMPTS))) {
