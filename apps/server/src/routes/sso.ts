@@ -123,7 +123,7 @@ export function ssoRoutes(app: FastifyInstance, s: Services): void {
     return s.sso.update(id, body, publicBaseUrl(s, req));
   });
 
-  app.delete('/api/sso-providers/:id', async (req) => {
+  app.delete('/api/sso-providers/:id', { preHandler: RateLimiter({ max: 30, timeWindow: '1 minute' }) }, async (req) => {
     assertSetup(principalOf(req));
     await s.sso.remove(params(req).id);
     return { ok: true };
