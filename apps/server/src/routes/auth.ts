@@ -132,7 +132,7 @@ export function authRoutes(app: FastifyInstance, s: Services): void {
     return s.users.beginChallengeEnrollment(body.challenge);
   });
 
-  app.get('/api/auth/mfa', async (req): Promise<MfaStatus> => {
+  app.get('/api/auth/mfa', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req): Promise<MfaStatus> => {
     const a = auth(req);
     const state = await s.mfa.state(a.user.id);
     return { ...state, required: !!a.permissions.requireMfa, hasPassword: await s.users.hasPassword(a.user.id) };
