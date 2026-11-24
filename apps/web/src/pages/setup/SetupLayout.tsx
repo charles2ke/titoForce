@@ -80,7 +80,9 @@ export default function SetupLayout() {
               <Settings className="size-4 text-slate-500" aria-hidden />
               Setup
             </div>
-            <nav ref={navRef} aria-label="Setup" className="flex gap-1 overflow-x-auto @4xl:block @4xl:space-y-4 @4xl:overflow-visible">
+            {/* The tab bar's end padding (pr-1) keeps the last tab whole when scrolled to the end: browsers round the
+                scroll range to whole pixels, which can otherwise stop a fraction of a pixel short of the tab. */}
+            <nav ref={navRef} aria-label="Setup" className="flex gap-1 overflow-x-auto pr-1 @4xl:block @4xl:space-y-4 @4xl:overflow-visible @4xl:pr-0">
               {groups.map((g) => (
                 <div key={g.label} className="flex shrink-0 gap-1 @4xl:block @4xl:space-y-0.5">
                   <p className="hidden px-2 pb-1 text-[11px] font-semibold tracking-wide text-slate-400 uppercase @4xl:block">{g.label}</p>
