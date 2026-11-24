@@ -12,16 +12,18 @@ import { CalendarView } from '../components/views/CalendarView.tsx';
 import { groupableFields, KanbanView } from '../components/views/KanbanView.tsx';
 import { type BaseQuery, TableView } from '../components/views/TableView.tsx';
 import { TimelineView } from '../components/views/TimelineView.tsx';
-import { fieldDef, listColumns, plural } from '../lib/format.ts';
+import { inSentence, type MessageKey, t } from '../i18n/index.ts';
+import { fieldDef, listColumns } from '../lib/format.ts';
 import { invalidateRecordData, useAuth, useDebounced, useObjectDef, usePermissions } from '../lib/hooks.ts';
 
 const MAX_COLUMNS = 20;
+const MAX_IMPORT_ROWS = 2000;
 
-const VIEW_TYPES: { id: ViewType; label: string; icon: typeof Table2 }[] = [
-  { id: 'table', label: 'Table', icon: Table2 },
-  { id: 'kanban', label: 'Kanban', icon: Kanban },
-  { id: 'calendar', label: 'Calendar', icon: CalendarDays },
-  { id: 'timeline', label: 'Timeline', icon: ChartGantt },
+const VIEW_TYPES: { id: ViewType; label: MessageKey; icon: typeof Table2 }[] = [
+  { id: 'table', label: 'list.viewType.table', icon: Table2 },
+  { id: 'kanban', label: 'list.viewType.kanban', icon: Kanban },
+  { id: 'calendar', label: 'list.viewType.calendar', icon: CalendarDays },
+  { id: 'timeline', label: 'list.viewType.timeline', icon: ChartGantt },
 ];
 
 const dateFields = (def: ObjectDef): FieldDef[] => [...def.fields.filter((f) => f.type === 'date' || f.type === 'datetime'), fieldDef(def, 'created_at')!];
@@ -56,8 +58,8 @@ function ViewPicker({ def, views, current, onPick }: { def: ObjectDef; views: Li
         className={cx('flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50', active ? 'font-medium text-indigo-700' : 'text-slate-700')}
       >
         <Check className={cx('size-3.5 shrink-0', active ? 'opacity-100' : 'opacity-0')} aria-hidden />
-        <span className="truncate">{v?.name ?? `All ${def.pluralLabel}`}</span>
-        {v && v.viewType !== 'table' && <span className="ml-auto text-xs text-slate-400 capitalize">{v.viewType}</span>}
+        <span className="truncate">{v?.name ?? t('list.views.all', { plural: def.pluralLabel })}</span>
+        {v && v.viewType !== 'table' && <span className="ml-auto text-xs text-slate-400">{t(`list.viewType.${v.viewType}`)}</span>}
       </button>
     );
   };
@@ -72,18 +74,18 @@ function ViewPicker({ def, views, current, onPick }: { def: ObjectDef; views: Li
     <Popover
       className="w-72"
       trigger={({ toggle, open }) => (
-        <button type="button" onClick={toggle} aria-expanded={open} aria-haspopup="menu" aria-label="Select list view" className="inline-flex max-w-xs items-center gap-1.5 rounded-lg px-2 py-1 text-left hover:bg-slate-100">
-          <span className="truncate text-base font-semibold text-slate-900">{current?.name ?? `All ${def.pluralLabel}`}</span>
+        <button type="button" onClick={toggle} aria-expanded={open} aria-haspopup="menu" aria-label={t('list.views.pickerLabel')} className="inline-flex max-w-xs items-center gap-1.5 rounded-lg px-2 py-1 text-left hover:bg-slate-100">
+          <span className="truncate text-base font-semibold text-slate-900">{current?.name ?? t('list.views.all', { plural: def.pluralLabel })}</span>
           <ChevronDown className="size-4 shrink-0 text-slate-500" aria-hidden />
         </button>
       )}
     >
       {(close) => (
-        <div role="menu" aria-label="List views" className="max-h-96 overflow-y-auto py-1">
+        <div role="menu" aria-label={t('list.views.menuLabel')} className="max-h-96 overflow-y-auto py-1">
           {item(null, close)}
-          {section('Shared views', shared, close)}
-          {section('My views', mine, close)}
-          {section("Other users' views", others, close)}
+          {section(t('list.views.shared'), shared, close)}
+          {section(t('list.views.mine'), mine, close)}
+          {section(t('list.views.others'), others, close)}
         </div>
       )}
     </Popover>
@@ -101,17 +103,15 @@ function ColumnsMenu({ def, columns, onChange }: { def: ObjectDef; columns: stri
     <Popover
       align="right"
       className="w-64"
-      trigger={({ toggle: t, open }) => (
-        <Button size="sm" icon={Columns3} onClick={t} aria-expanded={open}>
-          Columns
+      trigger={({ toggle: toggleMenu, open }) => (
+        <Button size="sm" icon={Columns3} onClick={toggleMenu} aria-expanded={open}>
+          {t('list.columns.button')}
         </Button>
       )}
     >
       {() => (
         <div>
-          <p className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
-            {columns.length} of {MAX_COLUMNS} columns shown
-          </p>
+          <p className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">{t('list.columns.shown', { shown: columns.length, max: MAX_COLUMNS })}</p>
           <div className="max-h-80 overflow-y-auto py-1">
             {options.map((f) => {
               const on = columns.includes(f.apiName);
@@ -126,7 +126,7 @@ function ColumnsMenu({ def, columns, onChange }: { def: ObjectDef; columns: stri
           </div>
           <div className="border-t border-slate-100 px-3 py-2">
             <Button size="sm" variant="ghost" onClick={() => onChange(listColumns(def))}>
-              Reset to default
+              {t('list.columns.reset')}
             </Button>
           </div>
         </div>
@@ -142,7 +142,7 @@ function SaveViewModal({ open, onClose, title, initialName, onSave, allowShare }
   const [busy, setBusy] = useState(false);
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (!name.trim()) return setError('Give the view a name.');
+    if (!name.trim()) return setError(t('list.views.nameRequired'));
     setBusy(true);
     setError(null);
     try {
@@ -162,19 +162,19 @@ function SaveViewModal({ open, onClose, title, initialName, onSave, allowShare }
       size="sm"
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" loading={busy} onClick={() => void submit()}>
-            Save
+            {t('common.save')}
           </Button>
         </>
       }
     >
       <form onSubmit={submit} className="space-y-4">
         <ErrorBanner error={error} />
-        <FormField label="View name" htmlFor="view-name" required>
+        <FormField label={t('list.views.nameLabel')} htmlFor="view-name" required>
           <input id="view-name" className="input" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
         </FormField>
-        {allowShare && <Toggle checked={shared} onChange={setShared} label="Share with everyone" />}
+        {allowShare && <Toggle checked={shared} onChange={setShared} label={t('list.views.shareWithEveryone')} />}
       </form>
     </Modal>
   );
@@ -199,18 +199,18 @@ function ImportModal({ def, open, onClose }: { def: ObjectDef; open: boolean; on
     <Modal
       open={open}
       onClose={onClose}
-      title={`Import ${def.pluralLabel.toLowerCase()}`}
+      title={t('list.import.title', { plural: inSentence(def.pluralLabel) })}
       size="lg"
       footer={
         result ? (
           <Button variant="primary" onClick={onClose}>
-            Done
+            {t('common.done')}
           </Button>
         ) : (
           <>
-            <Button onClick={onClose}>Cancel</Button>
+            <Button onClick={onClose}>{t('common.cancel')}</Button>
             <Button variant="primary" icon={Upload} loading={run.isPending} disabled={!csv.trim()} onClick={() => run.mutate()}>
-              Import
+              {t('common.import')}
             </Button>
           </>
         )
@@ -219,25 +219,29 @@ function ImportModal({ def, open, onClose }: { def: ObjectDef; open: boolean; on
       {result ? (
         <div className="space-y-4 text-sm">
           <p className="font-medium text-slate-800">
-            Created {plural(result.created, def.label.toLowerCase(), def.pluralLabel.toLowerCase())}
-            {result.errors.length > 0 && `; ${plural(result.errors.length, 'row')} failed`}.
+            {result.errors.length > 0
+              ? t('list.import.createdWithFailures', {
+                  count: result.created,
+                  singular: inSentence(def.label),
+                  plural: inSentence(def.pluralLabel),
+                  rows: t('list.import.rows', { count: result.errors.length }),
+                })
+              : t('list.import.created', { count: result.created, singular: inSentence(def.label), plural: inSentence(def.pluralLabel) })}
           </p>
           {result.errors.length > 0 && (
             <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-rose-100 bg-rose-50 p-3 text-xs text-rose-700">
               {result.errors.slice(0, 50).map((e) => (
-                <li key={e.row}>
-                  Row {e.row}: {e.message}
-                </li>
+                <li key={e.row}>{t('list.import.rowError', { row: String(e.row), message: e.message })}</li>
               ))}
             </ul>
           )}
           <div>
-            <p className="mb-1 text-xs font-semibold text-slate-500 uppercase">Column mapping</p>
+            <p className="mb-1 text-xs font-semibold text-slate-500 uppercase">{t('list.import.columnMapping')}</p>
             <ul className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
               {result.columns.map((c) => (
                 <li key={c.header} className="flex justify-between gap-2">
                   <span className="truncate text-slate-700">{c.header}</span>
-                  <span className={c.field ? 'text-emerald-700' : 'text-slate-400'}>{c.field ? (fieldDef(def, c.field)?.label ?? c.field) : 'ignored'}</span>
+                  <span className={c.field ? 'text-emerald-700' : 'text-slate-400'}>{c.field ? (fieldDef(def, c.field)?.label ?? c.field) : t('list.import.ignored')}</span>
                 </li>
               ))}
             </ul>
@@ -246,10 +250,8 @@ function ImportModal({ def, open, onClose }: { def: ObjectDef; open: boolean; on
       ) : (
         <div className="space-y-4">
           <ErrorBanner error={run.error} />
-          <p className="text-sm text-slate-600">
-            The first row must contain column headers matching {def.label.toLowerCase()} field labels or API names. Lookups and users can be given by name, id or (for users) email. Up to 2,000 rows.
-          </p>
-          <FormField label="CSV file" htmlFor="import-file">
+          <p className="text-sm text-slate-600">{t('list.import.instructions', { label: inSentence(def.label), max: MAX_IMPORT_ROWS })}</p>
+          <FormField label={t('list.import.file')} htmlFor="import-file">
             <input
               id="import-file"
               type="file"
@@ -263,7 +265,7 @@ function ImportModal({ def, open, onClose }: { def: ObjectDef; open: boolean; on
               }}
             />
           </FormField>
-          <FormField label={fileName ? `Contents of ${fileName}` : 'Or paste CSV'} htmlFor="import-csv">
+          <FormField label={fileName ? t('list.import.contentsOf', { file: fileName }) : t('list.import.paste')} htmlFor="import-csv">
             <textarea id="import-csv" className="input h-40 font-mono text-xs" value={csv} onChange={(e) => setCsv(e.target.value)} placeholder={'Name,Email\nAda Lovelace,ada@example.com'} />
           </FormField>
         </div>
@@ -337,7 +339,7 @@ function ListBody({ def, view, views }: { def: ObjectDef; view: ListViewDef | nu
   const saveNew = async (name: string, shared: boolean) => {
     const created = await api.post<ListViewDef>('/api/views', { object: def.apiName, name, shared, ...definition() });
     await qc.invalidateQueries({ queryKey: ['views', def.apiName] });
-    toast.success(`Saved view “${created.name}”`);
+    toast.success(t('list.views.savedNew', { name: created.name }));
     pickView(created.id);
   };
   const saveChanges = useMutation({
@@ -345,7 +347,7 @@ function ListBody({ def, view, views }: { def: ObjectDef; view: ListViewDef | nu
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['views', def.apiName] });
       dropVt();
-      toast.success('View saved');
+      toast.success(t('list.views.saved'));
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
@@ -354,11 +356,20 @@ function ListBody({ def, view, views }: { def: ObjectDef; view: ListViewDef | nu
     await qc.invalidateQueries({ queryKey: ['views', def.apiName] });
   };
   const remove = async () => {
-    if (!view || !(await confirm({ title: 'Delete list view?', message: `“${view.name}” will be removed${view.shared ? ' for everyone' : ''}.`, confirmLabel: 'Delete', danger: true }))) return;
+    if (
+      !view ||
+      !(await confirm({
+        title: t('list.views.deleteTitle'),
+        message: t(view.shared ? 'list.views.deleteMessageShared' : 'list.views.deleteMessage', { name: view.name }),
+        confirmLabel: t('common.delete'),
+        danger: true,
+      }))
+    )
+      return;
     try {
       await api.del(`/api/views/${view.id}`);
       await qc.invalidateQueries({ queryKey: ['views', def.apiName] });
-      toast.success('View deleted');
+      toast.success(t('list.views.deleted'));
       pickView(null);
     } catch (err) {
       toast.error(errorMessage(err));
@@ -377,7 +388,7 @@ function ListBody({ def, view, views }: { def: ObjectDef; view: ListViewDef | nu
   const canCreate = perms.canCreate(def.apiName);
   const newButton = canCreate ? (
     <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
-      New
+      {t('common.new')}
     </Button>
   ) : null;
 
@@ -393,7 +404,7 @@ function ListBody({ def, view, views }: { def: ObjectDef; view: ListViewDef | nu
               <Popover
                 className="w-44"
                 trigger={({ toggle, open }) => (
-                  <button type="button" onClick={toggle} aria-expanded={open} aria-label="View actions" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                  <button type="button" onClick={toggle} aria-expanded={open} aria-label={t('list.views.actions')} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
                     <Ellipsis className="size-4" />
                   </button>
                 )}
@@ -407,7 +418,7 @@ function ListBody({ def, view, views }: { def: ObjectDef; view: ListViewDef | nu
                         setSaving('rename');
                       }}
                     >
-                      Rename
+                      {t('list.views.rename')}
                     </MenuItem>
                     <MenuItem
                       icon={Trash}
@@ -417,7 +428,7 @@ function ListBody({ def, view, views }: { def: ObjectDef; view: ListViewDef | nu
                         void remove();
                       }}
                     >
-                      Delete view
+                      {t('list.views.delete')}
                     </MenuItem>
                   </div>
                 )}
@@ -428,41 +439,41 @@ function ListBody({ def, view, views }: { def: ObjectDef; view: ListViewDef | nu
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {canCreate && (
             <Button icon={Upload} onClick={() => setImporting(true)}>
-              Import
+              {t('common.import')}
             </Button>
           )}
           <a href={exportHref} download className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-700 shadow-xs hover:bg-slate-50">
-            <Download className="size-4" aria-hidden /> Export
+            <Download className="size-4" aria-hidden /> {t('common.export')}
           </a>
           {newButton}
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-6 py-2">
-        <div role="radiogroup" aria-label="Display as" className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-          {VIEW_TYPES.filter((t) => types.includes(t.id)).map((t) => (
+        <div role="radiogroup" aria-label={t('list.toolbar.displayAs')} className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+          {VIEW_TYPES.filter((opt) => types.includes(opt.id)).map((opt) => (
             <button
-              key={t.id}
+              key={opt.id}
               type="button"
               role="radio"
-              aria-checked={vt === t.id}
-              title={t.label}
+              aria-checked={vt === opt.id}
+              title={t(opt.label)}
               onClick={() =>
                 setParams((p) => {
-                  p.set('vt', t.id);
+                  p.set('vt', opt.id);
                   return p;
                 })
               }
-              className={cx('inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium', vt === t.id ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-800')}
+              className={cx('inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium', vt === opt.id ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-800')}
             >
-              <t.icon className="size-3.5" aria-hidden />
-              {t.label}
+              <opt.icon className="size-3.5" aria-hidden />
+              {t(opt.label)}
             </button>
           ))}
         </div>
         {vt === 'kanban' && groupableFields(def).length > 1 && (
           <label className="flex items-center gap-1.5 text-xs text-slate-500">
-            Group by
+            {t('list.toolbar.groupBy')}
             <select className="input h-7 w-auto py-0 text-xs" value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>
               {groupableFields(def).map((f) => (
                 <option key={f.apiName} value={f.apiName}>
@@ -474,7 +485,7 @@ function ListBody({ def, view, views }: { def: ObjectDef; view: ListViewDef | nu
         )}
         {vt === 'calendar' && (
           <label className="flex items-center gap-1.5 text-xs text-slate-500">
-            Date
+            {t('list.toolbar.dateField')}
             <select className="input h-7 w-auto py-0 text-xs" value={dateField} onChange={(e) => setDateField(e.target.value)}>
               {dateFields(def).map((f) => (
                 <option key={f.apiName} value={f.apiName}>
@@ -486,21 +497,21 @@ function ListBody({ def, view, views }: { def: ObjectDef; view: ListViewDef | nu
         )}
         <div className="relative ml-auto w-full sm:w-64">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
-          <input type="search" className="input h-8 pl-8 text-sm" placeholder={`Search ${def.pluralLabel.toLowerCase()}…`} aria-label={`Search ${def.pluralLabel.toLowerCase()}`} value={text} onChange={(e) => setText(e.target.value)} />
+          <input type="search" className="input h-8 pl-8 text-sm" placeholder={t('list.toolbar.searchPlaceholder', { plural: inSentence(def.pluralLabel) })} aria-label={t('list.toolbar.searchLabel', { plural: inSentence(def.pluralLabel) })} value={text} onChange={(e) => setText(e.target.value)} />
         </div>
         <Button size="sm" icon={ListFilter} onClick={() => setShowFilters((s) => !s)} aria-expanded={showFilters} className={filterCount ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : undefined}>
-          Filters{filterCount > 0 && ` (${filterCount})`}
+          {filterCount > 0 ? t('list.toolbar.filtersCount', { count: filterCount }) : t('list.toolbar.filters')}
         </Button>
         {vt === 'table' && <ColumnsMenu def={def} columns={columns} onChange={setColumns} />}
         {dirty && (
           <>
             {canChange && (
               <Button size="sm" variant="primary" icon={Save} loading={saveChanges.isPending} onClick={() => saveChanges.mutate()}>
-                Save
+                {t('common.save')}
               </Button>
             )}
             <Button size="sm" variant={canChange ? 'secondary' : 'primary'} icon={Save} onClick={() => setSaving('new')}>
-              Save as view
+              {t('list.views.saveAs')}
             </Button>
           </>
         )}
@@ -514,23 +525,23 @@ function ListBody({ def, view, views }: { def: ObjectDef; view: ListViewDef | nu
           <div className="mt-2 flex gap-2">
             {filterCount > 0 && (
               <Button size="sm" variant="ghost" icon={X} onClick={() => setDraft(null)}>
-                Clear filters
+                {t('list.toolbar.clearFilters')}
               </Button>
             )}
             {view && !same(completeFilter(draft), view.filters) && (
               <Button size="sm" variant="ghost" onClick={() => setDraft(view.filters)}>
-                Reset to view
+                {t('list.toolbar.resetToView')}
               </Button>
             )}
             <Button size="sm" className="ml-auto" onClick={() => setShowFilters(false)}>
-              Done
+              {t('common.done')}
             </Button>
           </div>
         </div>
       )}
       {!showFilters && activeFilter && (
         <p className="truncate border-b border-slate-100 bg-white px-6 py-1.5 text-xs text-slate-500" title={describeFilter(def, activeFilter)}>
-          <span className="font-medium text-slate-600">Filtered by:</span> {describeFilter(def, activeFilter)}
+          <span className="font-medium text-slate-600">{t('list.toolbar.filteredBy')}</span> {describeFilter(def, activeFilter)}
         </p>
       )}
 
@@ -543,8 +554,8 @@ function ListBody({ def, view, views }: { def: ObjectDef; view: ListViewDef | nu
 
       <RecordFormModal object={def.apiName} open={creating} onClose={() => setCreating(false)} onSaved={(r) => navigate(`/r/${r.id}`)} />
       {importing && <ImportModal def={def} open onClose={() => setImporting(false)} />}
-      {saving === 'new' && <SaveViewModal open title="Save as new view" initialName={view ? `${view.name} (copy)` : ''} allowShare={perms.isAdmin} onSave={saveNew} onClose={() => setSaving(null)} />}
-      {saving === 'rename' && view && <SaveViewModal open title="Rename view" initialName={view.name} allowShare={false} onSave={(name) => rename(name)} onClose={() => setSaving(null)} />}
+      {saving === 'new' && <SaveViewModal open title={t('list.views.saveAsTitle')} initialName={view ? t('list.views.copyName', { name: view.name }) : ''} allowShare={perms.isAdmin} onSave={saveNew} onClose={() => setSaving(null)} />}
+      {saving === 'rename' && view && <SaveViewModal open title={t('list.views.renameTitle')} initialName={view.name} allowShare={false} onSave={(name) => rename(name)} onClose={() => setSaving(null)} />}
     </div>
   );
 }
@@ -556,7 +567,7 @@ export default function ObjectList() {
   const views = useQuery({ queryKey: ['views', object], queryFn: () => api.get<ListViewDef[]>(`/api/objects/${object}/views`), enabled: !!def });
   if (isLoading || (def && views.isLoading)) return <Loading />;
   if (error) return <ErrorBanner error={error} className="m-6" />;
-  if (!def) return <EmptyState title="Object not found">It may have been deleted, or you may not have access to it.</EmptyState>;
+  if (!def) return <EmptyState title={t('list.objectNotFound.title')}>{t('list.objectNotFound.body')}</EmptyState>;
   if (views.error && !(views.error instanceof ApiError && views.error.status === 404)) return <ErrorBanner error={views.error} className="m-6" />;
   const list = views.data ?? [];
   const viewId = params.get('view');

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Search, X } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { api, qs } from '../api.ts';
+import { inSentence, t } from '../i18n/index.ts';
 import { useDebounced, useObjects, useUsers } from '../lib/hooks.ts';
 import { cx } from './ui.tsx';
 
@@ -79,8 +80,8 @@ export function LookupInput({
   if (value) {
     return (
       <div className={cx('input flex items-center justify-between gap-2', invalid && 'border-rose-400')}>
-        <span className="truncate">{chosen ?? resolved.data?.record.name ?? (resolved.isLoading ? 'Loading…' : 'Selected record')}</span>
-        <button type="button" aria-label="Clear selection" className="text-slate-400 hover:text-slate-600" onClick={() => onChange(null)}>
+        <span className="truncate">{chosen ?? resolved.data?.record.name ?? (resolved.isLoading ? t('common.loading') : t('components.lookup.selected'))}</span>
+        <button type="button" aria-label={t('components.lookup.clear')} className="text-slate-400 hover:text-slate-600" onClick={() => onChange(null)}>
           <X className="size-4" />
         </button>
       </div>
@@ -97,7 +98,7 @@ export function LookupInput({
         aria-expanded={open}
         aria-controls={listId}
         autoComplete="off"
-        placeholder={placeholder ?? (referenceTo === '*' ? 'Search any record…' : `Search ${target?.pluralLabel.toLowerCase() ?? 'records'}…`)}
+        placeholder={placeholder ?? (referenceTo === '*' ? t('components.lookup.searchAny') : target ? t('components.lookup.searchObject', { objects: inSentence(target.pluralLabel) }) : t('components.lookup.searchRecords'))}
         value={text}
         onFocus={() => setOpen(true)}
         onChange={(e) => {
@@ -120,8 +121,8 @@ export function LookupInput({
       />
       {open && (
         <ul id={listId} role="listbox" className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-          {results.isLoading && <li className="px-3 py-2 text-sm text-slate-400">Searching…</li>}
-          {!results.isLoading && options.length === 0 && <li className="px-3 py-2 text-sm text-slate-400">{referenceTo === '*' && !term ? 'Type to search' : 'No matches'}</li>}
+          {results.isLoading && <li className="px-3 py-2 text-sm text-slate-400">{t('components.lookup.searching')}</li>}
+          {!results.isLoading && options.length === 0 && <li className="px-3 py-2 text-sm text-slate-400">{referenceTo === '*' && !term ? t('components.lookup.typeToSearch') : t('components.lookup.noMatches')}</li>}
           {options.map((o, i) => (
             <li
               key={o.id}
@@ -168,7 +169,22 @@ const toLocalInput = (iso: string) => {
 };
 
 /** Editor control for any editable field type. Empty values are reported as null. */
-export function FieldInput({ field, value, onChange, refLabel, id, invalid }: { field: FieldDef; value: unknown; onChange: (v: unknown) => void; refLabel?: string | null; id?: string; invalid?: boolean }) {
+/** `onChange` also gets the display name of a picked lookup record. */
+export function FieldInput({
+  field,
+  value,
+  onChange,
+  refLabel,
+  id,
+  invalid,
+}: {
+  field: FieldDef;
+  value: unknown;
+  onChange: (v: unknown, label?: string) => void;
+  refLabel?: string | null;
+  id?: string;
+  invalid?: boolean;
+}) {
   const cls = cx('input', invalid && 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/20');
   const str = value === null || value === undefined ? '' : String(value);
   switch (field.type) {
@@ -208,7 +224,7 @@ export function FieldInput({ field, value, onChange, refLabel, id, invalid }: { 
           <option value="">—</option>
           {field.options?.map((o) => (
             <option key={o.value} value={o.value}>
-              {o.value}
+              {o.label ?? o.value}
             </option>
           ))}
           {str && !field.options?.some((o) => o.value === str) && <option value={str}>{str}</option>}
@@ -231,7 +247,7 @@ export function FieldInput({ field, value, onChange, refLabel, id, invalid }: { 
                 }}
                 className={cx('rounded-full border px-2.5 py-1 text-xs font-medium', on ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50')}
               >
-                {o.value}
+                {o.label ?? o.value}
               </button>
             );
           })}
@@ -239,7 +255,7 @@ export function FieldInput({ field, value, onChange, refLabel, id, invalid }: { 
       );
     }
     case 'lookup':
-      return <LookupInput id={id} invalid={invalid} referenceTo={field.referenceTo ?? '*'} value={str || null} label={refLabel} onChange={(v) => onChange(v)} />;
+      return <LookupInput id={id} invalid={invalid} referenceTo={field.referenceTo ?? '*'} value={str || null} label={refLabel} onChange={onChange} />;
     case 'user':
       return <UserSelect id={id} invalid={invalid} value={str || null} onChange={onChange} />;
     case 'email':

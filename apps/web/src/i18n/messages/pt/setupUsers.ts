@@ -1,0 +1,40 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  title: 'Usuários',
+  subtitle: 'Pessoas que podem fazer login, suas funções e seus acessos.',
+  newUser: 'Novo usuário',
+  searchLabel: 'Pesquisar usuários',
+  searchPlaceholder: 'Pesquisar por nome, email, cargo ou função…',
+  showInactive: 'Mostrar inativos ({count})',
+  noMatches: 'Nenhum usuário corresponde à sua pesquisa',
+  empty: 'Nenhum usuário',
+  jobTitle: 'Cargo',
+  you: 'Você',
+  aiAgent: 'Agente de IA',
+  editUser: 'Editar {name}',
+
+  form: {
+    newTitle: 'Novo usuário',
+    create: 'Criar usuário',
+    save: 'Salvar usuário',
+    added: 'Usuário adicionado: {name}',
+    saved: 'Usuário salvo: {name}',
+    chooseRole: 'Escolha uma função…',
+    invalidEmail: 'Insira um endereço de email válido.',
+    passwordTooShort: 'Pelo menos 8 caracteres.',
+    agentNotice:
+      'Este é o usuário de serviço dos agentes de IA. Os agentes iniciados por automações agem como este usuário, portanto a função dele limita o que eles podem fazer. Ele não pode fazer login.',
+    emailHelp: 'Usado para fazer login.',
+    fullName: 'Nome completo',
+    titlePlaceholder: 'Executivo de contas',
+    roleHelp: 'Controla o que o usuário pode ver e fazer.',
+    ownRoleHelp: 'Você não pode alterar sua própria função.',
+    newPassword: 'Nova senha',
+    passwordHelp: 'Pelo menos 8 caracteres. Compartilhe-a com o usuário de forma segura.',
+    ownPasswordHelp: 'Deixe em branco para manter a senha atual. Alterá-la encerra todas as suas sessões.',
+    userPasswordHelp: 'Deixe em branco para manter a senha atual. Alterá-la encerra as sessões do usuário.',
+    cantDeactivateSelf: 'Você não pode se desativar.',
+    inactiveHelp: 'Usuários inativos não podem fazer login. Os registros deles são mantidos.',
+  },
+} satisfies Translation['setupUsers'];

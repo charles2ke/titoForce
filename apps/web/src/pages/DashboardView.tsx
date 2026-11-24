@@ -7,7 +7,7 @@ import { ApiError, api, errorMessage } from '../api.ts';
 import { DashboardGrid, type RenderedWidget, useDashboard } from '../components/DashboardGrid.tsx';
 import { useConfirm, useToast } from '../components/feedback.tsx';
 import { Badge, Button, Card, cx, EmptyState, ErrorBanner, FormField, IconButton, Loading, MenuItem, PageHeader, Popover } from '../components/ui.tsx';
-import { plural } from '../lib/format.ts';
+import { intlLocale, type MessageKey, t } from '../i18n/index.ts';
 import { useApps, useObjects, usePermissions } from '../lib/hooks.ts';
 
 type Size = 1 | 2 | 3;
@@ -21,10 +21,10 @@ interface EditWidget {
 }
 
 const MAX_WIDGETS = 24;
-const SIZES: { id: Size; label: string }[] = [
-  { id: 1, label: 'Small (⅓ width)' },
-  { id: 2, label: 'Medium (⅔ width)' },
-  { id: 3, label: 'Full width' },
+const SIZES: { id: Size; label: MessageKey }[] = [
+  { id: 1, label: 'dashboards.editor.sizes.small' },
+  { id: 2, label: 'dashboards.editor.sizes.medium' },
+  { id: 3, label: 'dashboards.editor.sizes.full' },
 ];
 // Literal class names so Tailwind generates them.
 const SPAN: Record<Size, string> = { 1: 'col-span-1', 2: 'col-span-2', 3: 'col-span-3' };
@@ -80,7 +80,7 @@ function DashboardEditor({ dashboard, rendered, onDone }: { dashboard: Dashboard
     mutationFn: (body: DashboardInput) => api.patch<DashboardDef>(`/api/dashboards/${encodeURIComponent(dashboard.id)}`, body),
     onSuccess: async (d) => {
       await Promise.all([qc.invalidateQueries({ queryKey: ['dashboard'] }), qc.invalidateQueries({ queryKey: ['dashboards'] })]);
-      toast.success(`Dashboard “${d.name}” saved`);
+      toast.success(t('dashboards.editor.saved', { name: d.name }));
       onDone();
     },
   });
@@ -88,7 +88,7 @@ function DashboardEditor({ dashboard, rendered, onDone }: { dashboard: Dashboard
   const submit = () => {
     setAttempted(true);
     if (!name.trim()) {
-      toast.error('Name is required');
+      toast.error(t('dashboards.editor.nameRequired'));
       return;
     }
     save.mutate({
@@ -106,7 +106,7 @@ function DashboardEditor({ dashboard, rendered, onDone }: { dashboard: Dashboard
 
   const cancel = async () => {
     const dirty = snapshot(name, description, app, widgets) !== start;
-    if (dirty && !(await confirm({ title: 'Discard changes?', message: 'Your changes to this dashboard have not been saved.', confirmLabel: 'Discard', danger: true }))) return;
+    if (dirty && !(await confirm({ title: t('dashboards.editor.discardTitle'), message: t('dashboards.editor.discardMessage'), confirmLabel: t('dashboards.editor.discard'), danger: true }))) return;
     onDone();
   };
 
@@ -115,15 +115,15 @@ function DashboardEditor({ dashboard, rendered, onDone }: { dashboard: Dashboard
       <PageHeader
         icon="layout-grid"
         color="indigo"
-        title="Edit dashboard"
+        title={t('dashboards.editor.title')}
         subtitle={dashboard.name}
         actions={
           <>
             <Button onClick={() => void cancel()} disabled={save.isPending}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button variant="primary" icon={Save} loading={save.isPending} onClick={submit}>
-              Save dashboard
+              {t('dashboards.editor.save')}
             </Button>
           </>
         }
@@ -131,14 +131,14 @@ function DashboardEditor({ dashboard, rendered, onDone }: { dashboard: Dashboard
       <ErrorBanner error={save.error} className="mb-4" />
 
       <div className="space-y-6">
-        <Card title="Details">
+        <Card title={t('common.details')}>
           <div className="grid gap-4 sm:grid-cols-2">
-            <FormField label="Name" htmlFor="dashboard-name" required error={attempted && !name.trim() ? 'Name is required' : null}>
+            <FormField label={t('common.name')} htmlFor="dashboard-name" required error={attempted && !name.trim() ? t('dashboards.editor.nameRequired') : null}>
               <input id="dashboard-name" className="input" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} />
             </FormField>
-            <FormField label="App" htmlFor="dashboard-app" help="Lists the dashboard under an app.">
+            <FormField label={t('dashboards.editor.app')} htmlFor="dashboard-app" help={t('dashboards.editor.appHelp')}>
               <select id="dashboard-app" className="input" value={app} onChange={(e) => setApp(e.target.value)}>
-                <option value="">None</option>
+                <option value="">{t('common.none')}</option>
                 {app && !apps.data?.some((a) => a.id === app) && <option value={app}>{app}</option>}
                 {apps.data?.map((a) => (
                   <option key={a.id} value={a.id}>
@@ -147,14 +147,14 @@ function DashboardEditor({ dashboard, rendered, onDone }: { dashboard: Dashboard
                 ))}
               </select>
             </FormField>
-            <FormField label="Description" htmlFor="dashboard-description" className="sm:col-span-2">
+            <FormField label={t('common.description')} htmlFor="dashboard-description" className="sm:col-span-2">
               <textarea id="dashboard-description" className="input" rows={2} maxLength={1000} value={description} onChange={(e) => setDescription(e.target.value)} />
             </FormField>
           </div>
         </Card>
 
         <Card
-          title="Widgets"
+          title={t('dashboards.editor.widgets')}
           actions={
             <span className="text-xs text-slate-500">
               {widgets.length} / {MAX_WIDGETS}
@@ -163,7 +163,7 @@ function DashboardEditor({ dashboard, rendered, onDone }: { dashboard: Dashboard
           bodyClassName=""
         >
           {widgets.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-slate-500">No widgets yet. Add a report below.</p>
+            <p className="px-4 py-8 text-center text-sm text-slate-500">{t('dashboards.editor.noWidgets')}</p>
           ) : (
             <ol className="divide-y divide-slate-100">
               {widgets.map((w, i) => {
@@ -175,41 +175,53 @@ function DashboardEditor({ dashboard, rendered, onDone }: { dashboard: Dashboard
                     <span className="w-5 shrink-0 text-center text-xs font-medium text-slate-400">{n}</span>
                     <div className="min-w-0 flex-1 basis-56">
                       {deleted ? (
-                        <p className="text-sm font-medium text-rose-700">Deleted report. It will be removed when you save.</p>
+                        <p className="text-sm font-medium text-rose-700">{t('dashboards.editor.deletedReport')}</p>
                       ) : (
                         <>
                           <input
-                            aria-label={`Title of widget ${n}`}
+                            aria-label={t('dashboards.editor.widgetTitle', { number: n })}
                             className="input"
-                            placeholder={report?.name ?? 'Report'}
+                            placeholder={report?.name ?? t('dashboards.editor.report')}
                             value={w.title}
                             maxLength={120}
                             onChange={(e) => update(w.key, { title: e.target.value })}
                           />
                           <p className="mt-1 truncate text-xs text-slate-500">
-                            {report ? `${report.name} · ${objectLabel(report.object)}` : 'Loading report…'}
-                            {w.title.trim() ? '' : ' · uses the report name as title'}
+                            {report ? `${report.name} · ${objectLabel(report.object)}` : t('dashboards.editor.loadingReport')}
+                            {w.title.trim() ? '' : ` · ${t('dashboards.editor.usesReportName')}`}
                           </p>
                         </>
                       )}
                     </div>
-                    <select aria-label={`Size of widget ${n}`} className="input w-auto" value={w.size} disabled={deleted} onChange={(e) => update(w.key, { size: Number(e.target.value) as Size })}>
+                    <select
+                      aria-label={t('dashboards.editor.widgetSize', { number: n })}
+                      className="input w-auto"
+                      value={w.size}
+                      disabled={deleted}
+                      onChange={(e) => update(w.key, { size: Number(e.target.value) as Size })}
+                    >
                       {SIZES.map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.label}
+                          {t(s.label)}
                         </option>
                       ))}
                     </select>
                     <div className="flex items-center">
-                      <IconButton icon={ArrowUp} label={`Move widget ${n} up`} disabled={i === 0} onClick={() => move(i, i - 1)} className="disabled:pointer-events-none disabled:opacity-30" />
+                      <IconButton
+                        icon={ArrowUp}
+                        label={t('dashboards.editor.moveUp', { number: n })}
+                        disabled={i === 0}
+                        onClick={() => move(i, i - 1)}
+                        className="disabled:pointer-events-none disabled:opacity-30"
+                      />
                       <IconButton
                         icon={ArrowDown}
-                        label={`Move widget ${n} down`}
+                        label={t('dashboards.editor.moveDown', { number: n })}
                         disabled={i === widgets.length - 1}
                         onClick={() => move(i, i + 1)}
                         className="disabled:pointer-events-none disabled:opacity-30"
                       />
-                      <IconButton icon={Trash2} label={`Remove widget ${n}`} onClick={() => setWidgets((ws) => ws.filter((x) => x.key !== w.key))} />
+                      <IconButton icon={Trash2} label={t('dashboards.editor.remove', { number: n })} onClick={() => setWidgets((ws) => ws.filter((x) => x.key !== w.key))} />
                     </div>
                   </li>
                 );
@@ -218,9 +230,15 @@ function DashboardEditor({ dashboard, rendered, onDone }: { dashboard: Dashboard
           )}
           <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
             <Plus className="size-4 shrink-0 text-slate-400" aria-hidden />
-            <select aria-label="Add a report" className="input w-full sm:w-96" value="" disabled={full || !reportsQ.data?.length} onChange={(e) => add(e.target.value)}>
+            <select aria-label={t('dashboards.editor.addReport')} className="input w-full sm:w-96" value="" disabled={full || !reportsQ.data?.length} onChange={(e) => add(e.target.value)}>
               <option value="">
-                {full ? `Maximum of ${MAX_WIDGETS} widgets reached` : reportsQ.isLoading ? 'Loading reports…' : reportsQ.data?.length ? 'Add a report…' : 'No reports available'}
+                {full
+                  ? t('dashboards.editor.maxWidgets', { max: MAX_WIDGETS })
+                  : reportsQ.isLoading
+                    ? t('dashboards.editor.loadingReports')
+                    : reportsQ.data?.length
+                      ? t('dashboards.editor.addReportOption')
+                      : t('dashboards.editor.noReports')}
               </option>
               {groups.map(([object, list]) => (
                 <optgroup key={object} label={objectLabel(object)}>
@@ -232,13 +250,13 @@ function DashboardEditor({ dashboard, rendered, onDone }: { dashboard: Dashboard
                 </optgroup>
               ))}
             </select>
-            {removedCount > 0 && <span className="text-xs text-rose-600">{plural(removedCount, 'deleted report')} will be removed on save.</span>}
+            {removedCount > 0 && <span className="text-xs text-rose-600">{t('dashboards.editor.deletedReportsRemoved', { count: removedCount })}</span>}
           </div>
           {reportsQ.error ? <ErrorBanner error={reportsQ.error} className="mx-4 mb-3" /> : null}
         </Card>
 
         {widgets.length > 0 && (
-          <Card title="Layout preview">
+          <Card title={t('dashboards.editor.layoutPreview')}>
             <div className="grid grid-cols-3 gap-2" aria-hidden>
               {widgets.map((w) => (
                 <div
@@ -249,11 +267,11 @@ function DashboardEditor({ dashboard, rendered, onDone }: { dashboard: Dashboard
                     isDeleted(w.reportId) ? 'border-rose-200 bg-rose-50 text-rose-500 line-through' : 'border-indigo-200 bg-indigo-50/60 text-indigo-700',
                   )}
                 >
-                  {w.title.trim() || reportById.get(w.reportId)?.name || 'Report'}
+                  {w.title.trim() || reportById.get(w.reportId)?.name || t('dashboards.editor.report')}
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-xs text-slate-500">On small screens every widget takes the full width.</p>
+            <p className="mt-3 text-xs text-slate-500">{t('dashboards.editor.smallScreens')}</p>
           </Card>
         )}
       </div>
@@ -291,14 +309,14 @@ export default function DashboardView() {
         <div className="card">
           <EmptyState
             icon={LayoutDashboard}
-            title="Dashboard not found"
+            title={t('dashboards.view.notFound')}
             action={
               <Link to="/dashboards" className="text-sm font-medium text-indigo-600 hover:underline">
-                Back to dashboards
+                {t('dashboards.view.backToList')}
               </Link>
             }
           >
-            It may have been deleted.
+            {t('dashboards.view.notFoundMessage')}
           </EmptyState>
         </div>
       </div>
@@ -307,7 +325,7 @@ export default function DashboardView() {
   if (!q.data) {
     return (
       <div className="p-6">
-        <ErrorBanner error={q.error ?? 'This dashboard could not be loaded.'} />
+        <ErrorBanner error={q.error ?? t('dashboards.view.loadFailed')} />
       </div>
     );
   }
@@ -316,19 +334,19 @@ export default function DashboardView() {
   if (editing) return <DashboardEditor key={dashboard.id} dashboard={dashboard} rendered={widgets} onDone={() => setEditing(false)} />;
 
   const appName = dashboard.app ? (apps.data?.find((a) => a.id === dashboard.app)?.name ?? dashboard.app) : null;
-  const asOf = new Date(q.dataUpdatedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const asOf = new Date(q.dataUpdatedAt).toLocaleTimeString(intlLocale(), { hour: 'numeric', minute: '2-digit' });
 
   const remove = async () => {
     const homes = (apps.data ?? []).filter((a) => a.dashboardId === dashboard.id);
     const ok = await confirm({
-      title: 'Delete dashboard?',
+      title: t('dashboards.view.deleteTitle'),
       message: (
         <>
-          <p>“{dashboard.name}” will be permanently deleted. Its reports are kept.</p>
-          {homes.length > 0 && <p className="mt-2">It is the home dashboard of {homes.map((a) => a.name).join(', ')}.</p>}
+          <p>{t('dashboards.view.deleteMessage', { name: dashboard.name })}</p>
+          {homes.length > 0 && <p className="mt-2">{t('dashboards.view.deleteHomeOf', { apps: homes.map((a) => a.name).join(', ') })}</p>}
         </>
       ),
-      confirmLabel: 'Delete',
+      confirmLabel: t('common.delete'),
       danger: true,
     });
     if (!ok) return;
@@ -337,7 +355,7 @@ export default function DashboardView() {
       navigate('/dashboards', { replace: true });
       qc.removeQueries({ queryKey: ['dashboard', dashboard.id] });
       await qc.invalidateQueries({ queryKey: ['dashboards'] });
-      toast.success(`Dashboard “${dashboard.name}” deleted`);
+      toast.success(t('dashboards.view.deleted', { name: dashboard.name }));
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -347,7 +365,7 @@ export default function DashboardView() {
     <div className="mx-auto max-w-7xl p-6">
       <Link to="/dashboards" className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-indigo-600">
         <ArrowLeft className="size-3.5" aria-hidden />
-        Dashboards
+        {t('dashboards.title')}
       </Link>
       <PageHeader
         icon="layout-grid"
@@ -357,12 +375,12 @@ export default function DashboardView() {
         actions={
           <>
             <Button icon={RefreshCw} loading={q.isFetching} onClick={() => void q.refetch()}>
-              Refresh
+              {t('common.refresh')}
             </Button>
             {analyst && (
               <>
                 <Button icon={Pencil} onClick={() => setEditing(true)}>
-                  Edit
+                  {t('common.edit')}
                 </Button>
                 <Popover
                   align="right"
@@ -372,8 +390,8 @@ export default function DashboardView() {
                       type="button"
                       onClick={toggle}
                       aria-expanded={open}
-                      aria-label="More actions"
-                      title="More actions"
+                      aria-label={t('common.moreActions')}
+                      title={t('common.moreActions')}
                       className="inline-flex size-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 shadow-xs hover:bg-slate-50 hover:text-slate-900"
                     >
                       <Ellipsis className="size-4" aria-hidden />
@@ -390,7 +408,7 @@ export default function DashboardView() {
                           void remove();
                         }}
                       >
-                        Delete dashboard
+                        {t('dashboards.view.deleteDashboard')}
                       </MenuItem>
                     </div>
                   )}
@@ -409,7 +427,7 @@ export default function DashboardView() {
 
       {q.error ? <ErrorBanner error={q.error} className="mb-4" /> : null}
       <DashboardGrid widgets={widgets} />
-      {widgets.length > 0 && <p className="mt-4 text-xs text-slate-400">Data as of {asOf}. Each widget only counts the records you can access.</p>}
+      {widgets.length > 0 && <p className="mt-4 text-xs text-slate-400">{t('dashboards.view.dataAsOf', { time: asOf })}</p>}
     </div>
   );
 }

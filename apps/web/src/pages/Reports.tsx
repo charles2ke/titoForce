@@ -1,4 +1,4 @@
-import type { ChartType, DashboardDef, MetricFn, ObjectDef, ReportDef } from '@titoforce/shared';
+import type { ChartType, DashboardDef, ObjectDef, ReportDef } from '@titoforce/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChartBar, ChartColumn, ChartLine, ChartPie, Donut, Ellipsis, Funnel, Gauge, type LucideIcon, Pencil, Plus, Search, Table2, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
@@ -6,29 +6,30 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { api, errorMessage, qs } from '../api.ts';
 import { useConfirm, useToast } from '../components/feedback.tsx';
 import { Badge, Button, EmptyState, ErrorBanner, Loading, MenuItem, ObjectTile, PageHeader, Popover } from '../components/ui.tsx';
-import { fieldDef, formatDateTime, plural, relativeTime } from '../lib/format.ts';
+import { type MessageKey, t } from '../i18n/index.ts';
+import { fieldDef, formatDateTime, relativeTime } from '../lib/format.ts';
 import { useApps, useObjects, usePermissions } from '../lib/hooks.ts';
 
-const CHARTS: Record<ChartType, { label: string; icon: LucideIcon }> = {
-  bar: { label: 'Bar', icon: ChartBar },
-  column: { label: 'Column', icon: ChartColumn },
-  line: { label: 'Line', icon: ChartLine },
-  pie: { label: 'Pie', icon: ChartPie },
-  donut: { label: 'Donut', icon: Donut },
-  kpi: { label: 'KPI', icon: Gauge },
-  table: { label: 'Table', icon: Table2 },
-  funnel: { label: 'Funnel', icon: Funnel },
+const CHARTS: Record<ChartType, { label: MessageKey; icon: LucideIcon }> = {
+  bar: { label: 'reports.charts.bar', icon: ChartBar },
+  column: { label: 'reports.charts.column', icon: ChartColumn },
+  line: { label: 'reports.charts.line', icon: ChartLine },
+  pie: { label: 'reports.charts.pie', icon: ChartPie },
+  donut: { label: 'reports.charts.donut', icon: Donut },
+  kpi: { label: 'reports.charts.kpi', icon: Gauge },
+  table: { label: 'reports.charts.table', icon: Table2 },
+  funnel: { label: 'reports.charts.funnel', icon: Funnel },
 };
 
-const FN_LABELS: Record<MetricFn, string> = { count: 'Count', sum: 'Sum', avg: 'Average', min: 'Min', max: 'Max' };
-const SYSTEM_LABELS: Record<string, string> = { owner_id: 'Owner', created_at: 'Created Date', updated_at: 'Last Modified' };
+const SYSTEM_LABELS: Record<string, MessageKey> = { owner_id: 'common.owner', created_at: 'reports.createdDate', updated_at: 'common.lastModified' };
 
-const labelOf = (def: ObjectDef | undefined, field: string) => SYSTEM_LABELS[field] ?? (def && fieldDef(def, field)?.label) ?? field;
+const systemLabel = (field: string) => (Object.hasOwn(SYSTEM_LABELS, field) ? t(SYSTEM_LABELS[field]) : undefined);
+const labelOf = (def: ObjectDef | undefined, field: string) => systemLabel(field) ?? (def && fieldDef(def, field)?.label) ?? field;
 
 /** e.g. "Sum of Amount by Stage". */
 function summary(r: ReportDef, def: ObjectDef | undefined): string {
-  const metric = r.metric.fn === 'count' ? 'Record count' : `${FN_LABELS[r.metric.fn]} of ${labelOf(def, r.metric.field ?? '')}`;
-  return r.groupBy ? `${metric} by ${labelOf(def, r.groupBy.field)}` : metric;
+  const metric = r.metric.fn === 'count' ? t('reports.summary.recordCount') : t(`reports.summary.${r.metric.fn}`, { field: labelOf(def, r.metric.field ?? '') });
+  return r.groupBy ? t('reports.summary.byGroup', { metric, group: labelOf(def, r.groupBy.field) }) : metric;
 }
 
 function RowMenu({ report, onDelete }: { report: ReportDef; onDelete: () => void }) {
@@ -38,7 +39,13 @@ function RowMenu({ report, onDelete }: { report: ReportDef; onDelete: () => void
       align="right"
       className="w-40"
       trigger={({ toggle, open }) => (
-        <button type="button" onClick={toggle} aria-expanded={open} aria-label={`Actions for ${report.name}`} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-label={t('reports.list.actionsFor', { name: report.name })}
+          className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+        >
           <Ellipsis className="size-4" />
         </button>
       )}
@@ -52,7 +59,7 @@ function RowMenu({ report, onDelete }: { report: ReportDef; onDelete: () => void
               navigate(`/reports/${report.id}/edit`);
             }}
           >
-            Edit
+            {t('common.edit')}
           </MenuItem>
           <MenuItem
             icon={Trash2}
@@ -62,7 +69,7 @@ function RowMenu({ report, onDelete }: { report: ReportDef; onDelete: () => void
               onDelete();
             }}
           >
-            Delete
+            {t('common.delete')}
           </MenuItem>
         </div>
       )}
@@ -130,25 +137,21 @@ export default function Reports() {
       // Only used to warn about affected dashboards; deleting still works without it.
     }
     const ok = await confirm({
-      title: 'Delete report?',
+      title: t('reports.list.deleteTitle'),
       message: (
         <>
-          <p>“{report.name}” will be permanently deleted.</p>
-          {usedOn.length > 0 && (
-            <p className="mt-2">
-              It is used on {plural(usedOn.length, 'dashboard')} ({usedOn.map((d) => d.name).join(', ')}), where it will show as deleted until it is removed.
-            </p>
-          )}
+          <p>{t('reports.list.deleteMessage', { name: report.name })}</p>
+          {usedOn.length > 0 && <p className="mt-2">{t('reports.list.usedOnDashboards', { count: usedOn.length, names: usedOn.map((d) => d.name).join(', ') })}</p>}
         </>
       ),
-      confirmLabel: 'Delete',
+      confirmLabel: t('common.delete'),
       danger: true,
     });
     if (!ok) return;
     try {
       await api.del(`/api/reports/${encodeURIComponent(report.id)}`);
       await Promise.all(['reports', 'report', 'dashboard'].map((k) => qc.invalidateQueries({ queryKey: [k] })));
-      toast.success(`Report “${report.name}” deleted`);
+      toast.success(t('reports.list.deleted', { name: report.name }));
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -156,21 +159,21 @@ export default function Reports() {
 
   const newButton = analyst ? (
     <Button variant="primary" icon={Plus} onClick={() => navigate(`/reports/new${qs({ object, app })}`)}>
-      New report
+      {t('reports.newReport')}
     </Button>
   ) : null;
 
   return (
     <div className="mx-auto max-w-6xl p-6">
-      <PageHeader icon="chart-column" color="blue" title="Reports" subtitle="Charts and KPIs over your records. Everyone sees results for the records they can access." actions={newButton} />
+      <PageHeader icon="chart-column" color="blue" title={t('reports.title')} subtitle={t('reports.subtitle')} actions={newButton} />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative w-full sm:w-72">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
-          <input type="search" aria-label="Search reports" placeholder="Search reports…" className="input pl-8" value={text} onChange={(e) => setText(e.target.value)} />
+          <input type="search" aria-label={t('reports.list.search')} placeholder={t('reports.list.searchPlaceholder')} className="input pl-8" value={text} onChange={(e) => setText(e.target.value)} />
         </div>
-        <select aria-label="Filter by object" className="input w-auto" value={object} onChange={(e) => setParam('object', e.target.value)}>
-          <option value="">All objects</option>
+        <select aria-label={t('reports.list.filterByObject')} className="input w-auto" value={object} onChange={(e) => setParam('object', e.target.value)}>
+          <option value="">{t('reports.list.allObjects')}</option>
           {objectOptions.map(([name, count]) => (
             <option key={name} value={name}>
               {objectLabel(name)} ({count})
@@ -178,8 +181,8 @@ export default function Reports() {
           ))}
         </select>
         {(apps.data?.length ?? 0) > 0 && (
-          <select aria-label="Filter by app" className="input w-auto" value={app} onChange={(e) => setParam('app', e.target.value)}>
-            <option value="">All apps</option>
+          <select aria-label={t('reports.list.filterByApp')} className="input w-auto" value={app} onChange={(e) => setParam('app', e.target.value)}>
+            <option value="">{t('reports.list.allApps')}</option>
             {app && !appNames.has(app) && <option value={app}>{app}</option>}
             {apps.data?.map((a) => (
               <option key={a.id} value={a.id}>
@@ -190,10 +193,10 @@ export default function Reports() {
         )}
         {filtering && (
           <Button size="sm" variant="ghost" icon={X} onClick={clearFilters}>
-            Clear
+            {t('common.clear')}
           </Button>
         )}
-        {reports.data && <span className="ml-auto text-sm text-slate-500">{plural(matches.length, 'report')}</span>}
+        {reports.data && <span className="ml-auto text-sm text-slate-500">{t('reports.list.count', { count: matches.length })}</span>}
       </div>
 
       {reports.isLoading ? (
@@ -203,20 +206,20 @@ export default function Reports() {
       ) : matches.length === 0 ? (
         <div className="card">
           {all.length === 0 && !app ? (
-            <EmptyState icon={ChartColumn} title="No reports yet" action={newButton}>
-              {analyst ? 'Create a report to chart and summarize your records.' : 'Reports created by your analysts and admins will appear here.'}
+            <EmptyState icon={ChartColumn} title={t('reports.list.emptyTitle')} action={newButton}>
+              {analyst ? t('reports.list.emptyAnalyst') : t('reports.list.emptyViewer')}
             </EmptyState>
           ) : (
             <EmptyState
               icon={Search}
-              title="No reports match"
+              title={t('reports.list.noMatchTitle')}
               action={
                 <Button size="sm" icon={X} onClick={clearFilters}>
-                  Clear filters
+                  {t('reports.list.clearFilters')}
                 </Button>
               }
             >
-              Try a different search, object or app.
+              {t('reports.list.noMatchMessage')}
             </EmptyState>
           )}
         </div>
@@ -245,10 +248,10 @@ export default function Reports() {
                       </div>
                       <span className="hidden w-24 shrink-0 items-center gap-1.5 text-xs text-slate-600 sm:inline-flex" title={summary(r, def)}>
                         <chart.icon className="size-4 text-slate-400" aria-hidden />
-                        {chart.label}
+                        {t(chart.label)}
                       </span>
                       <span className="hidden w-28 shrink-0 md:block">{appName && <Badge color="indigo">{appName}</Badge>}</span>
-                      <span className="hidden w-24 shrink-0 text-right text-xs text-slate-500 sm:block" title={`Last modified ${formatDateTime(r.updatedAt)}`}>
+                      <span className="hidden w-24 shrink-0 text-right text-xs text-slate-500 sm:block" title={t('reports.list.lastModified', { date: formatDateTime(r.updatedAt) })}>
                         {relativeTime(r.updatedAt)}
                       </span>
                       {analyst && <RowMenu report={r} onDelete={() => void remove(r)} />}

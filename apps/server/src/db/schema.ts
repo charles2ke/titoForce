@@ -24,12 +24,14 @@ export const TABLES = [
   'dashboards',
   'notifications',
   'settings',
+  'page_layouts',
+  'translations',
   'schema_migrations',
 ] as const;
 
 // Portable DDL: TEXT ids, ISO-8601 timestamps stored as TEXT, INTEGER booleans.
 // Record payloads use JSON (TEXT in SQLite, JSONB in PostgreSQL).
-const MIGRATIONS: { version: number; statements: (jsonType: string) => string[] }[] = [
+const MIGRATIONS: Migration[] = [
   {
     version: 1,
     statements: (json) => [
@@ -250,17 +252,47 @@ const MIGRATIONS: { version: number; statements: (jsonType: string) => string[] 
       )`,
     ],
   },
+  {
+    version: 3,
+    statements: () => [
+      `CREATE TABLE page_layouts (
+        id TEXT PRIMARY KEY,
+        object_api_name TEXT NOT NULL,
+        name TEXT NOT NULL,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        definition TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX idx_page_layouts_object ON page_layouts (object_api_name)`,
+      `CREATE TABLE translations (
+        locale TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (locale, key)
+      )`,
+      `ALTER TABLE users ADD COLUMN locale TEXT`,
+    ],
+  },
 ];
 
-export async function migrate(db: Db): Promise<void> {
-  await db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`);
-  const applied = new Set((await db.all<{ version: number }>('SELECT version FROM schema_migrations')).map((r) => Number(r.version)));
+export type Migration = { version: number; statements: (jsonType: string) => string[] };
+
+/** Applies pending migrations, each in its own transaction, recording them in `table`. */
+export async function runMigrations(db: Db, migrations: Migration[], table: string): Promise<void> {
+  await db.exec(`CREATE TABLE IF NOT EXISTS ${table} (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`);
+  const applied = new Set((await db.all<{ version: number }>(`SELECT version FROM ${table}`)).map((r) => Number(r.version)));
   const jsonType = db.dialect === 'postgres' ? 'JSONB' : 'TEXT';
-  for (const m of MIGRATIONS) {
+  for (const m of migrations) {
     if (applied.has(m.version)) continue;
     await db.transaction(async (tx) => {
       for (const stmt of m.statements(jsonType)) await tx.exec(stmt);
-      await tx.run('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)', [m.version, new Date().toISOString()]);
+      await tx.run(`INSERT INTO ${table} (version, applied_at) VALUES (?, ?)`, [m.version, new Date().toISOString()]);
     });
   }
+}
+
+export function migrate(db: Db): Promise<void> {
+  return runMigrations(db, MIGRATIONS, 'schema_migrations');
 }

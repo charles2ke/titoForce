@@ -1,0 +1,40 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  title: 'Utilisateurs',
+  subtitle: 'Personnes qui peuvent se connecter, avec leurs rôles et leurs accès.',
+  newUser: 'Nouvel utilisateur',
+  searchLabel: 'Rechercher des utilisateurs',
+  searchPlaceholder: 'Rechercher par nom, e-mail, fonction ou rôle…',
+  showInactive: 'Afficher les inactifs ({count})',
+  noMatches: 'Aucun utilisateur ne correspond à votre recherche',
+  empty: 'Aucun utilisateur',
+  jobTitle: 'Fonction',
+  you: 'Vous',
+  aiAgent: 'Agent IA',
+  editUser: 'Modifier {name}',
+
+  form: {
+    newTitle: 'Nouvel utilisateur',
+    create: 'Créer l’utilisateur',
+    save: 'Enregistrer l’utilisateur',
+    added: 'Utilisateur {name} ajouté',
+    saved: 'Utilisateur {name} enregistré',
+    chooseRole: 'Choisir un rôle…',
+    invalidEmail: 'Saisissez une adresse e-mail valide.',
+    passwordTooShort: 'Au moins 8 caractères.',
+    agentNotice:
+      'Il s’agit de l’utilisateur de service des agents IA. Les agents lancés par des automatisations agissent en tant que cet utilisateur : son rôle limite donc ce qu’ils peuvent faire. Il ne peut pas se connecter.',
+    emailHelp: 'Sert à se connecter.',
+    fullName: 'Nom complet',
+    titlePlaceholder: 'Chargé d’affaires',
+    roleHelp: 'Détermine ce que l’utilisateur peut voir et faire.',
+    ownRoleHelp: 'Vous ne pouvez pas modifier votre propre rôle.',
+    newPassword: 'Nouveau mot de passe',
+    passwordHelp: 'Au moins 8 caractères. Communiquez-le à l’utilisateur de manière sécurisée.',
+    ownPasswordHelp: 'Laissez vide pour conserver le mot de passe actuel. Le modifier vous déconnecte de toutes vos sessions.',
+    userPasswordHelp: 'Laissez vide pour conserver le mot de passe actuel. Le modifier déconnecte l’utilisateur.',
+    cantDeactivateSelf: 'Vous ne pouvez pas vous désactiver vous-même.',
+    inactiveHelp: 'Les utilisateurs inactifs ne peuvent pas se connecter. Leurs enregistrements sont conservés.',
+  },
+} satisfies Translation['setupUsers'];

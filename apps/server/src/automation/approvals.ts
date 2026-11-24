@@ -65,7 +65,7 @@ export class ApprovalService {
     return p;
   }
 
-  private async validateProcess(input: ApprovalProcessInput): Promise<ApprovalProcessInput> {
+  async validateProcess(input: ApprovalProcessInput): Promise<ApprovalProcessInput> {
     if (!input.name?.trim()) throw badRequest('Name is required');
     const def = this.metadata.require(input.object);
     validateFilter(this.metadata, input.object, input.entryConditions);

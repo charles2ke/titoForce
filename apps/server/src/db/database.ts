@@ -14,8 +14,13 @@ export interface Db {
   get<T = Row>(sql: string, params?: SqlParam[]): Promise<T | undefined>;
   run(sql: string, params?: SqlParam[]): Promise<{ changes: number }>;
   exec(sql: string): Promise<void>;
-  transaction<T>(fn: (tx: Db) => Promise<T>): Promise<T>;
+  /** Runs `fn` atomically. `snapshot` gives a read-only, repeatable-read view (for consistent multi-table reads). */
+  transaction<T>(fn: (tx: Db) => Promise<T>, opts?: TransactionOptions): Promise<T>;
   close(): Promise<void>;
+}
+
+export interface TransactionOptions {
+  snapshot?: boolean;
 }
 
 // ---------- SQLite (node:sqlite) ----------
@@ -214,16 +219,16 @@ export class PostgresDb extends PgExecutor implements Db {
   readonly dialect = 'postgres' as const;
   private pool: pg.Pool;
 
-  constructor(connectionString: string) {
-    const pool = new pg.Pool({ connectionString, max: 10 });
+  constructor(connectionString: string, poolSize = 10) {
+    const pool = new pg.Pool({ connectionString, max: poolSize });
     super(pool);
     this.pool = pool;
   }
 
-  async transaction<T>(fn: (tx: Db) => Promise<T>): Promise<T> {
+  async transaction<T>(fn: (tx: Db) => Promise<T>, opts: TransactionOptions = {}): Promise<T> {
     const client = await this.pool.connect();
     try {
-      await client.query('BEGIN');
+      await client.query(opts.snapshot ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
       const result = await fn(new PgTx(client));
       await client.query('COMMIT');
       return result;
@@ -240,8 +245,10 @@ export class PostgresDb extends PgExecutor implements Db {
   }
 }
 
-export function openDatabase(url: string): Db {
-  if (url.startsWith('postgres://') || url.startsWith('postgresql://')) return new PostgresDb(url);
+export const isPostgresUrl = (url: string): boolean => url.startsWith('postgres://') || url.startsWith('postgresql://');
+
+export function openDatabase(url: string, opts: { poolSize?: number } = {}): Db {
+  if (isPostgresUrl(url)) return new PostgresDb(url, opts.poolSize);
   const file = url.startsWith('sqlite:') ? url.slice('sqlite:'.length) : url;
   return new SqliteDb(file || ':memory:');
 }

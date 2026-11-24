@@ -4,6 +4,7 @@ import { ArrowRightLeft } from 'lucide-react';
 import { type DragEvent, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { api, errorMessage } from '../../api.ts';
+import { inSentence, t } from '../../i18n/index.ts';
 import { hex } from '../../lib/colors.ts';
 import { fieldDef, formatCompact, valueOf } from '../../lib/format.ts';
 import { invalidateRecordData, usePermissions } from '../../lib/hooks.ts';
@@ -35,7 +36,7 @@ function MoveMenu({ record, columns, current, onMove }: { record: CrmRecord; col
           type="button"
           onClick={toggle}
           aria-expanded={open}
-          aria-label={`Move ${record.name}`}
+          aria-label={t('views.kanban.move', { name: record.name })}
           className="rounded p-0.5 text-slate-300 opacity-0 group-hover:opacity-100 hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100"
         >
           <ArrowRightLeft className="size-3.5" />
@@ -102,7 +103,7 @@ function Card({
     >
       <div className="flex items-start justify-between gap-2">
         <Link to={`/r/${record.id}`} className="min-w-0 text-sm leading-snug font-medium text-slate-900 hover:text-indigo-700 hover:underline" draggable={false}>
-          {record.name || '(no name)'}
+          {record.name || t('views.noName')}
         </Link>
         {draggable && <MoveMenu record={record} columns={columns} current={current} onMove={onMove} />}
       </div>
@@ -169,7 +170,7 @@ export function KanbanView({ def, base, groupBy, columns: listCols }: { def: Obj
     onSettled: () => invalidateRecordData(qc),
   });
 
-  if (!field) return <ErrorBanner className="m-4" error={new Error(`Kanban boards need a picklist to group by; “${groupBy}” is not one.`)} />;
+  if (!field) return <ErrorBanner className="m-4" error={new Error(t('views.kanban.needsPicklist', { field: groupBy }))} />;
   if (query.isLoading) return <Loading />;
   if (query.error) return <ErrorBanner error={query.error} className="m-4" />;
 
@@ -177,13 +178,13 @@ export function KanbanView({ def, base, groupBy, columns: listCols }: { def: Obj
     const v = r.fields[groupBy];
     return v === null || v === undefined || v === '' ? NONE : String(v);
   };
-  const columns: Column[] = (field.options ?? []).map((o) => ({ key: o.value, value: o.value, label: o.value, color: o.color }));
+  const columns: Column[] = (field.options ?? []).map((o) => ({ key: o.value, value: o.value, label: o.label ?? o.value, color: o.color }));
   const known = new Set(columns.map((c) => c.key));
   for (const r of records) {
     const lane = laneOf(r);
     if (!known.has(lane)) {
       known.add(lane);
-      columns.push(lane === NONE ? { key: NONE, value: null, label: `No ${field.label.toLowerCase()}`, color: 'gray' } : { key: lane, value: lane, label: lane, color: 'gray' });
+      columns.push(lane === NONE ? { key: NONE, value: null, label: t('views.kanban.noValue', { field: inSentence(field.label) }), color: 'gray' } : { key: lane, value: lane, label: lane, color: 'gray' });
     }
   }
   const byLane = new Map<string, CrmRecord[]>(columns.map((c) => [c.key, []]));
@@ -201,11 +202,9 @@ export function KanbanView({ def, base, groupBy, columns: listCols }: { def: Obj
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {query.data && query.data.total > records.length && (
-        <p className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs text-amber-800">
-          Showing the first {records.length.toLocaleString()} of {query.data.total.toLocaleString()} records. Add filters to narrow the board.
-        </p>
+        <p className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs text-amber-800">{t('views.kanban.truncated', { shown: records.length, total: query.data.total })}</p>
       )}
-      <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-4" role="list" aria-label={`${def.pluralLabel} by ${field.label}`}>
+      <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-4" role="list" aria-label={t('views.kanban.boardLabel', { plural: def.pluralLabel, field: field.label })}>
         {columns.map((col) => {
           const items = byLane.get(col.key) ?? [];
           const sum = sumField ? items.reduce((acc, r) => acc + (typeof r.fields[sumField.apiName] === 'number' ? (r.fields[sumField.apiName] as number) : 0), 0) : 0;
@@ -256,7 +255,7 @@ export function KanbanView({ def, base, groupBy, columns: listCols }: { def: Obj
                     onMove={(value) => move.mutate({ id: r.id, value })}
                   />
                 ))}
-                {items.length === 0 && <p className="px-2 py-6 text-center text-xs text-slate-400">Drop cards here</p>}
+                {items.length === 0 && <p className="px-2 py-6 text-center text-xs text-slate-400">{t('views.kanban.dropHere')}</p>}
               </div>
             </section>
           );

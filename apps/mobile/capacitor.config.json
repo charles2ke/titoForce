@@ -1,0 +1,9 @@
+{
+  "appId": "org.titoforce.app",
+  "appName": "titoForce",
+  "webDir": "../web/dist",
+  "backgroundColor": "#f8fafc",
+  "plugins": {
+    "SystemBars": { "insetsHandling": "css", "style": "LIGHT" }
+  }
+}

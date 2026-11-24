@@ -3,24 +3,46 @@ import type { ApprovalProcessDef, AutomationAction, AutomationActionType, FieldD
 import { ArrowDown, ArrowUp, Braces, Plus, Trash, X } from 'lucide-react';
 import { useId, useRef, useState } from 'react';
 import { api, qs } from '../api.ts';
+import { t, tx } from '../i18n/index.ts';
 import { isEditable } from '../lib/format.ts';
 import { useAgents, useObjects, usePermissions } from '../lib/hooks.ts';
 import { FieldInput, UserSelect } from './FieldInput.tsx';
 import { Button, cx, FormField, IconButton, MenuItem, Popover } from './ui.tsx';
 
+/** Labels are getters so they are translated when read (in the active language). */
 export const ACTION_LABELS: Record<AutomationActionType, string> = {
-  update_record: 'Update this record',
-  update_related: 'Update related record',
-  create_record: 'Create record',
-  notify: 'Send notification',
-  run_agent: 'Run AI agent',
-  webhook: 'Call webhook',
-  submit_approval: 'Submit for approval',
+  get update_record() {
+    return t('setupAutomations.actionTypes.updateRecord');
+  },
+  get update_related() {
+    return t('setupAutomations.actionTypes.updateRelated');
+  },
+  get create_record() {
+    return t('setupAutomations.actionTypes.createRecord');
+  },
+  get notify() {
+    return t('setupAutomations.actionTypes.notify');
+  },
+  get run_agent() {
+    return t('setupAutomations.actionTypes.runAgent');
+  },
+  get webhook() {
+    return t('setupAutomations.actionTypes.webhook');
+  },
+  get submit_approval() {
+    return t('setupAutomations.actionTypes.submitApproval');
+  },
 };
 
 const ALL_TYPES = Object.keys(ACTION_LABELS) as AutomationActionType[];
 
-const OWNER_FIELD: FieldDef = { apiName: 'owner_id', label: 'Owner', type: 'user' };
+const OWNER_FIELD: FieldDef = {
+  apiName: 'owner_id',
+  get label() {
+    return t('common.owner');
+  },
+  type: 'user',
+};
 const TEXTUAL = new Set(['text', 'longtext', 'email', 'phone', 'url']);
 
 const RECIPIENT_RE = /^(owner|triggering_user|user:[a-z0-9_]+|role:[a-z0-9_]+|field:[a-z][a-z0-9_]*)$/;
@@ -28,32 +50,32 @@ const RECIPIENT_RE = /^(owner|triggering_user|user:[a-z0-9_]+|role:[a-z0-9_]+|fi
 const isTemplate = (v: unknown) => typeof v === 'string' && v.includes('{{');
 
 /** Client-side mirror of the server's action validation; returns the first problem, if any. */
-export function actionsProblem(actions: AutomationAction[], itemLabel = 'Action'): string | null {
+export function actionsProblem(actions: AutomationAction[], itemLabel = t('setupAutomations.editor.item')): string | null {
   for (const [i, a] of actions.entries()) {
-    const n = `${itemLabel} ${i + 1}`;
+    const n = t('setupAutomations.editor.numbered', { label: itemLabel, n: i + 1 });
     const noFields = 'fields' in a && !Object.keys(a.fields ?? {}).length;
     switch (a.type) {
       case 'create_record':
-        if (!a.object) return `${n}: choose the object to create.`;
-        if (noFields) return `${n}: add at least one field.`;
+        if (!a.object) return t('setupAutomations.problems.chooseObjectToCreate', { item: n });
+        if (noFields) return t('setupAutomations.problems.addField', { item: n });
         break;
       case 'update_related':
-        if (!a.lookupField) return `${n}: choose the related record.`;
-        if (noFields) return `${n}: add at least one field.`;
+        if (!a.lookupField) return t('setupAutomations.problems.chooseRelatedRecord', { item: n });
+        if (noFields) return t('setupAutomations.problems.addField', { item: n });
         break;
       case 'update_record':
-        if (noFields) return `${n}: add at least one field.`;
+        if (noFields) return t('setupAutomations.problems.addField', { item: n });
         break;
       case 'notify':
-        if (!RECIPIENT_RE.test(a.to)) return `${n}: choose who to notify.`;
-        if (!a.title.trim()) return `${n}: enter a notification title.`;
+        if (!RECIPIENT_RE.test(a.to)) return t('setupAutomations.problems.chooseRecipient', { item: n });
+        if (!a.title.trim()) return t('setupAutomations.problems.enterNotificationTitle', { item: n });
         break;
       case 'run_agent':
-        if (!a.agentId) return `${n}: choose an agent.`;
-        if (!a.prompt.trim()) return `${n}: enter a prompt.`;
+        if (!a.agentId) return t('setupAutomations.problems.chooseAgent', { item: n });
+        if (!a.prompt.trim()) return t('setupAutomations.problems.enterPrompt', { item: n });
         break;
       case 'webhook':
-        if (!/^https?:\/\/\S+$/i.test(a.url)) return `${n}: enter an http(s) URL.`;
+        if (!/^https?:\/\/\S+$/i.test(a.url)) return t('setupAutomations.problems.enterUrl', { item: n });
         break;
       case 'submit_approval':
         break;
@@ -114,16 +136,18 @@ function blankAction(type: AutomationActionType, object: ObjectDef, agentId: str
 
 function TemplateHint({ object }: { object: ObjectDef }) {
   const lookup = object.fields.find((f) => f.type === 'lookup' && f.referenceTo !== '*');
+  const code = (sample: string) => <code className="rounded bg-slate-100 px-1">{sample}</code>;
+  const samples = {
+    braces: code('{{ }}'),
+    recordName: code('{{record.name}}'),
+    previousValue: code('{{previous.<field>}}'),
+    ownerName: code('{{owner.name}}'),
+    userName: code('{{user.name}}'),
+    formula: code('{{ADD_DAYS(TODAY(), 3)}}'),
+  };
   return (
     <p className="text-xs text-slate-500">
-      Insert dynamic values with <code className="rounded bg-slate-100 px-1">{'{{ }}'}</code>, e.g. <code className="rounded bg-slate-100 px-1">{'{{record.name}}'}</code>, <code className="rounded bg-slate-100 px-1">{'{{previous.<field>}}'}</code>,{' '}
-      <code className="rounded bg-slate-100 px-1">{'{{owner.name}}'}</code>, <code className="rounded bg-slate-100 px-1">{'{{user.name}}'}</code> (who made the change)
-      {lookup && (
-        <>
-          , <code className="rounded bg-slate-100 px-1">{`{{related.${lookup.apiName}.name}}`}</code>
-        </>
-      )}{' '}
-      or formulas like <code className="rounded bg-slate-100 px-1">{'{{ADD_DAYS(TODAY(), 3)}}'}</code>.
+      {lookup ? tx('setupAutomations.editor.templateHintRelated', { ...samples, relatedName: code(`{{related.${lookup.apiName}.name}}`) }) : tx('setupAutomations.editor.templateHint', samples)}
     </p>
   );
 }
@@ -169,7 +193,7 @@ function FieldValueRow({
     <div className="flex flex-wrap items-start gap-2 sm:flex-nowrap">
       <div className="w-full sm:w-52 sm:shrink-0">
         <label htmlFor={fieldId} className="sr-only">
-          Field
+          {t('common.field')}
         </label>
         <select
           id={fieldId}
@@ -192,13 +216,13 @@ function FieldValueRow({
       </div>
       <div className="min-w-0 flex-1">
         <label htmlFor={valueId} className="sr-only">
-          Value for {f?.label ?? apiName}
+          {t('setupAutomations.fieldValues.valueFor', { field: f?.label ?? apiName })}
         </label>
         {tpl || textual || !f ? (
           <input
             id={valueId}
             className={cx('input', tpl && 'font-mono text-xs')}
-            placeholder={tpl ? '{{record.name}}' : 'Text or {{template}}'}
+            placeholder={tpl ? '{{record.name}}' : t('setupAutomations.fieldValues.valuePlaceholder', { template: '{{template}}' })}
             value={str}
             onChange={(e) => onValue(e.target.value)}
           />
@@ -210,8 +234,8 @@ function FieldValueRow({
         <button
           type="button"
           aria-pressed={tpl}
-          aria-label={`Use a formula for ${f.label}`}
-          title={tpl ? 'Switch back to a fixed value' : 'Use a formula / template'}
+          aria-label={t('setupAutomations.fieldValues.useFormulaFor', { field: f.label })}
+          title={tpl ? t('setupAutomations.fieldValues.useFixedValue') : t('setupAutomations.fieldValues.useFormula')}
           onClick={() => {
             if (tpl) onValue(initialValue(f));
             else onValue(typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean' ? String(value) : '');
@@ -222,7 +246,7 @@ function FieldValueRow({
           <Braces className="size-4" aria-hidden />
         </button>
       )}
-      <IconButton icon={X} label={`Remove ${f?.label ?? apiName}`} className="mt-0.5" onClick={onRemove} />
+      <IconButton icon={X} label={t('setupAutomations.fieldValues.remove', { field: f?.label ?? apiName })} className="mt-0.5" onClick={onRemove} />
     </div>
   );
 }
@@ -231,7 +255,7 @@ function FieldValueRow({
 function FieldValues({ target, values, onChange }: { target: ObjectDef | undefined; values: Record<string, unknown>; onChange: (v: Record<string, unknown>) => void }) {
   const entries = Object.entries(values ?? {});
   const rows = useStableKeys(entries.length);
-  if (!target) return <p className="text-sm text-slate-500">Choose an object first.</p>;
+  if (!target) return <p className="text-sm text-slate-500">{t('setupAutomations.fieldValues.chooseObjectFirst')}</p>;
   const fields = settableFields(target);
   const used = new Set(entries.map(([k]) => k));
   const free = fields.filter((f) => !used.has(f.apiName));
@@ -240,8 +264,8 @@ function FieldValues({ target, values, onChange }: { target: ObjectDef | undefin
     <div className="space-y-2">
       {entries.length > 0 && (
         <div className="hidden gap-2 text-xs font-semibold text-slate-500 uppercase sm:flex">
-          <span className="w-52 shrink-0">Field</span>
-          <span>Value</span>
+          <span className="w-52 shrink-0">{t('common.field')}</span>
+          <span>{t('common.value')}</span>
         </div>
       )}
       {entries.map(([k, v], i) => (
@@ -262,7 +286,7 @@ function FieldValues({ target, values, onChange }: { target: ObjectDef | undefin
           }}
         />
       ))}
-      {entries.length === 0 && <p className="text-sm text-slate-500">No fields yet — add the fields this action should set.</p>}
+      {entries.length === 0 && <p className="text-sm text-slate-500">{t('setupAutomations.fieldValues.empty')}</p>}
       <Button
         size="sm"
         variant="ghost"
@@ -274,18 +298,18 @@ function FieldValues({ target, values, onChange }: { target: ObjectDef | undefin
           onChange({ ...values, [f.apiName]: initialValue(f) });
         }}
       >
-        Add field
+        {t('setupAutomations.fieldValues.add')}
       </Button>
     </div>
   );
 }
 
 const RECIPIENT_KINDS = [
-  { id: 'owner', label: 'Record owner' },
-  { id: 'triggering_user', label: 'User who made the change' },
-  { id: 'user', label: 'A specific user' },
-  { id: 'role', label: 'Everyone with a role' },
-  { id: 'field', label: 'User in a field of the record' },
+  { id: 'owner', label: 'setupAutomations.notify.recipients.owner' },
+  { id: 'triggering_user', label: 'setupAutomations.notify.recipients.triggeringUser' },
+  { id: 'user', label: 'setupAutomations.notify.recipients.user' },
+  { id: 'role', label: 'setupAutomations.notify.recipients.role' },
+  { id: 'field', label: 'setupAutomations.notify.recipients.field' },
 ] as const;
 type RecipientKind = (typeof RECIPIENT_KINDS)[number]['id'];
 
@@ -308,25 +332,25 @@ function RecipientInput({ object, value, onChange }: { object: ObjectDef; value:
 
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <FormField label="Send to" htmlFor={kindId} required>
+      <FormField label={t('setupAutomations.notify.sendTo')} htmlFor={kindId} required>
         <select id={kindId} className="input" value={kind} onChange={(e) => setKind(e.target.value as RecipientKind)}>
           {RECIPIENT_KINDS.map((k) => (
             <option key={k.id} value={k.id}>
-              {k.label}
+              {t(k.label)}
             </option>
           ))}
         </select>
       </FormField>
       {kind === 'user' && (
-        <FormField label="User" htmlFor={targetId} required>
-          <UserSelect id={targetId} value={target || null} emptyLabel="Choose a user…" onChange={(id) => onChange(`user:${id ?? ''}`)} />
+        <FormField label={t('setupAutomations.notify.user')} htmlFor={targetId} required>
+          <UserSelect id={targetId} value={target || null} emptyLabel={t('setupAutomations.notify.chooseUser')} onChange={(id) => onChange(`user:${id ?? ''}`)} />
         </FormField>
       )}
       {kind === 'role' &&
         (isAdmin ? (
-          <FormField label="Role" htmlFor={targetId} required>
+          <FormField label={t('common.role')} htmlFor={targetId} required>
             <select id={targetId} className="input" value={target} onChange={(e) => onChange(`role:${e.target.value}`)}>
-              {!target && <option value="">Choose a role…</option>}
+              {!target && <option value="">{t('setupAutomations.notify.chooseRole')}</option>}
               {target && !roles.data?.some((r) => r.id === target) && <option value={target}>{target}</option>}
               {roles.data?.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -336,12 +360,12 @@ function RecipientInput({ object, value, onChange }: { object: ObjectDef; value:
             </select>
           </FormField>
         ) : (
-          <FormField label="Role id" htmlFor={targetId} required help="e.g. sales_manager">
+          <FormField label={t('setupAutomations.notify.roleId')} htmlFor={targetId} required help={t('setupAutomations.notify.roleIdHelp', { example: 'sales_manager' })}>
             <input id={targetId} className="input font-mono" value={target} onChange={(e) => onChange(`role:${e.target.value.trim()}`)} />
           </FormField>
         ))}
       {kind === 'field' && (
-        <FormField label="User field" htmlFor={targetId} required help={userFields.length ? 'The user stored in this field is notified.' : `${object.label} has no user fields.`}>
+        <FormField label={t('setupAutomations.notify.userField')} htmlFor={targetId} required help={userFields.length ? t('setupAutomations.notify.userFieldHelp') : t('setupAutomations.notify.noUserFields', { object: object.label })}>
           <select id={targetId} className="input" value={target} onChange={(e) => onChange(`field:${e.target.value}`)}>
             {!userFields.some((f) => f.apiName === target) && <option value={target}>{target || '—'}</option>}
             {userFields.map((f) => (
@@ -385,7 +409,7 @@ function ActionBody({ object, action, onChange }: { object: ObjectDef; action: A
       return (
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            <FormField label="Related record" htmlFor={ids.a} required help={lookups.length ? 'The record referenced by this lookup field is updated.' : `${object.label} has no lookup fields.`}>
+            <FormField label={t('setupAutomations.updateRelated.relatedRecord')} htmlFor={ids.a} required help={lookups.length ? t('setupAutomations.updateRelated.relatedRecordHelp') : t('setupAutomations.updateRelated.noLookupFields', { object: object.label })}>
               <select
                 id={ids.a}
                 className="input"
@@ -396,18 +420,18 @@ function ActionBody({ object, action, onChange }: { object: ObjectDef; action: A
                   onChange({ ...action, lookupField: e.target.value, fields: next?.referenceTo === lf?.referenceTo ? action.fields : {} });
                 }}
               >
-                {!lf && <option value={action.lookupField}>{action.lookupField || 'Choose a lookup field…'}</option>}
+                {!lf && <option value={action.lookupField}>{action.lookupField || t('setupAutomations.updateRelated.chooseLookupField')}</option>}
                 {lookups.map((f) => (
                   <option key={f.apiName} value={f.apiName}>
-                    {f.label} → {f.referenceTo === '*' ? 'any object' : (objectDef(f.referenceTo)?.label ?? f.referenceTo)}
+                    {f.label} → {f.referenceTo === '*' ? t('setupAutomations.updateRelated.anyObject') : (objectDef(f.referenceTo)?.label ?? f.referenceTo)}
                   </option>
                 ))}
               </select>
             </FormField>
             {polymorphic && (
-              <FormField label="Show fields of" htmlFor={ids.b} help="The lookup can point to any object; pick the object whose fields you want to set.">
+              <FormField label={t('setupAutomations.updateRelated.showFieldsOf')} htmlFor={ids.b} help={t('setupAutomations.updateRelated.showFieldsOfHelp')}>
                 <select id={ids.b} className="input" value={targetApi ?? ''} onChange={(e) => setPolyTarget(e.target.value)}>
-                  {!targetApi && <option value="">Choose an object…</option>}
+                  {!targetApi && <option value="">{t('setupAutomations.chooseObject')}</option>}
                   {objects.data?.map((o) => (
                     <option key={o.apiName} value={o.apiName}>
                       {o.label}
@@ -426,9 +450,9 @@ function ActionBody({ object, action, onChange }: { object: ObjectDef; action: A
       const target = objectDef(action.object);
       return (
         <div className="space-y-3">
-          <FormField label="Object to create" htmlFor={ids.a} required help="The new record is owned by this record’s owner unless you set Owner. Use {{record.id}} in a lookup field to link it back.">
+          <FormField label={t('setupAutomations.createRecord.object')} htmlFor={ids.a} required help={t('setupAutomations.createRecord.objectHelp', { example: '{{record.id}}' })}>
             <select id={ids.a} className="input sm:w-72" value={action.object} onChange={(e) => onChange({ ...action, object: e.target.value, fields: {} })}>
-              {!target && <option value={action.object}>{action.object || 'Choose an object…'}</option>}
+              {!target && <option value={action.object}>{action.object || t('setupAutomations.chooseObject')}</option>}
               {objects.data?.map((o) => (
                 <option key={o.apiName} value={o.apiName}>
                   {o.label}
@@ -445,10 +469,10 @@ function ActionBody({ object, action, onChange }: { object: ObjectDef; action: A
       return (
         <div className="space-y-3">
           <RecipientInput object={object} value={action.to} onChange={(to) => onChange({ ...action, to })} />
-          <FormField label="Notification title" htmlFor={ids.a} required>
-            <input id={ids.a} className="input" placeholder="Hot lead: {{record.name}}" value={action.title} onChange={(e) => onChange({ ...action, title: e.target.value })} />
+          <FormField label={t('setupAutomations.notify.title')} htmlFor={ids.a} required>
+            <input id={ids.a} className="input" placeholder={t('setupAutomations.notify.titlePlaceholder', { recordName: '{{record.name}}' })} value={action.title} onChange={(e) => onChange({ ...action, title: e.target.value })} />
           </FormField>
-          <FormField label="Notification message" htmlFor={ids.b}>
+          <FormField label={t('setupAutomations.notify.message')} htmlFor={ids.b}>
             <textarea id={ids.b} className="input" rows={2} value={action.body ?? ''} onChange={(e) => onChange({ ...action, body: e.target.value })} />
           </FormField>
           <TemplateHint object={object} />
@@ -458,19 +482,18 @@ function ActionBody({ object, action, onChange }: { object: ObjectDef; action: A
       const list = agents.data ?? [];
       return (
         <div className="space-y-3">
-          <FormField label="Agent" htmlFor={ids.a} required>
+          <FormField label={t('setupAutomations.runAgent.agent')} htmlFor={ids.a} required>
             <select id={ids.a} className="input sm:w-72" value={action.agentId} onChange={(e) => onChange({ ...action, agentId: e.target.value })}>
-              {!list.some((a) => a.id === action.agentId) && <option value={action.agentId}>{action.agentId || 'Choose an agent…'}</option>}
+              {!list.some((a) => a.id === action.agentId) && <option value={action.agentId}>{action.agentId || t('setupAutomations.runAgent.chooseAgent')}</option>}
               {list.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.name}
-                  {a.active ? '' : ' (inactive)'}
+                  {a.active ? a.name : t('setupAutomations.editor.inactiveOption', { name: a.name })}
                 </option>
               ))}
             </select>
           </FormField>
-          <FormField label="Prompt" htmlFor={ids.b} required help="The agent runs in the background with this record as context. Templates like {{record.name}} are allowed.">
-            <textarea id={ids.b} className="input" rows={3} placeholder="Qualify this lead" value={action.prompt} onChange={(e) => onChange({ ...action, prompt: e.target.value })} />
+          <FormField label={t('setupAutomations.runAgent.prompt')} htmlFor={ids.b} required help={t('setupAutomations.runAgent.promptHelp', { example: '{{record.name}}' })}>
+            <textarea id={ids.b} className="input" rows={3} placeholder={t('setupAutomations.runAgent.promptPlaceholder')} value={action.prompt} onChange={(e) => onChange({ ...action, prompt: e.target.value })} />
           </FormField>
         </div>
       );
@@ -478,10 +501,10 @@ function ActionBody({ object, action, onChange }: { object: ObjectDef; action: A
     case 'webhook':
       return (
         <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
-          <FormField label="Webhook URL" htmlFor={ids.a} required help="Receives a JSON payload with the event, object, record and previous values. Calls run in the background.">
+          <FormField label={t('setupAutomations.webhook.url')} htmlFor={ids.a} required help={t('setupAutomations.webhook.urlHelp')}>
             <input id={ids.a} type="url" className="input" placeholder="https://example.com/hooks/titoforce" value={action.url} onChange={(e) => onChange({ ...action, url: e.target.value.trim() })} />
           </FormField>
-          <FormField label="Method" htmlFor={ids.b}>
+          <FormField label={t('setupAutomations.webhook.method')} htmlFor={ids.b}>
             <select id={ids.b} className="input" value={action.method ?? 'POST'} onChange={(e) => onChange({ ...action, method: e.target.value as 'POST' | 'PUT' })}>
               <option value="POST">POST</option>
               <option value="PUT">PUT</option>
@@ -493,7 +516,7 @@ function ActionBody({ object, action, onChange }: { object: ObjectDef; action: A
       const list = processes.data ?? [];
       return (
         <div className="grid gap-3 sm:grid-cols-2">
-          <FormField label="Approval process" htmlFor={ids.a} help="Leave on automatic to use the first active process whose entry conditions match.">
+          <FormField label={t('setupAutomations.submitApproval.process')} htmlFor={ids.a} help={t('setupAutomations.submitApproval.processHelp')}>
             <select
               id={ids.a}
               className="input"
@@ -503,17 +526,16 @@ function ActionBody({ object, action, onChange }: { object: ObjectDef; action: A
                 onChange(e.target.value ? { ...rest, processId: e.target.value } : rest);
               }}
             >
-              <option value="">Automatic (first matching process)</option>
+              <option value="">{t('setupAutomations.submitApproval.automatic')}</option>
               {action.processId && !list.some((p) => p.id === action.processId) && <option value={action.processId}>{action.processId}</option>}
               {list.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
-                  {p.active ? '' : ' (inactive)'}
+                  {p.active ? p.name : t('setupAutomations.editor.inactiveOption', { name: p.name })}
                 </option>
               ))}
             </select>
           </FormField>
-          <FormField label="Submission comment" htmlFor={ids.c} help="Optional; templates allowed.">
+          <FormField label={t('setupAutomations.submitApproval.comment')} htmlFor={ids.c} help={t('setupAutomations.submitApproval.commentHelp')}>
             <input id={ids.c} className="input" value={action.comment ?? ''} onChange={(e) => onChange({ ...action, comment: e.target.value })} />
           </FormField>
         </div>
@@ -528,9 +550,9 @@ export function ActionsEditor({
   value,
   onChange,
   types = ALL_TYPES,
-  emptyText = 'No actions yet.',
-  itemLabel = 'Action',
-  addLabel = 'Add action',
+  emptyText = t('setupAutomations.editor.empty'),
+  itemLabel = t('setupAutomations.editor.item'),
+  addLabel = t('setupAutomations.editor.add'),
 }: {
   object: ObjectDef;
   value: AutomationAction[];
@@ -564,27 +586,27 @@ export function ActionsEditor({
         const typeId = `${baseId}-type-${i}`;
         const options = types.includes(a.type) ? types : [a.type, ...types];
         return (
-          <fieldset key={rows.keys[i]} aria-label={`${itemLabel} ${i + 1}`} className="rounded-xl border border-slate-200 bg-white">
+          <fieldset key={rows.keys[i]} aria-label={t('setupAutomations.editor.numbered', { label: itemLabel, n: i + 1 })} className="rounded-xl border border-slate-200 bg-white">
             <div className="flex flex-wrap items-center gap-2 rounded-t-xl border-b border-slate-100 bg-slate-50/70 px-3 py-2">
               <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700" aria-hidden>
                 {i + 1}
               </span>
               <label htmlFor={typeId} className="sr-only">
-                Action type
+                {t('setupAutomations.editor.actionType')}
               </label>
               <select id={typeId} className="input w-auto min-w-52 py-1" value={a.type} onChange={(e) => set(i, blankAction(e.target.value as AutomationActionType, object, firstAgent))}>
-                {options.map((t) => (
-                  <option key={t} value={t}>
-                    {ACTION_LABELS[t]}
+                {options.map((type) => (
+                  <option key={type} value={type}>
+                    {ACTION_LABELS[type]}
                   </option>
                 ))}
               </select>
               <div className="ml-auto flex items-center">
-                <IconButton icon={ArrowUp} label="Move action up" disabled={i === 0} className="disabled:opacity-30" onClick={() => move(i, -1)} />
-                <IconButton icon={ArrowDown} label="Move action down" disabled={i === value.length - 1} className="disabled:opacity-30" onClick={() => move(i, 1)} />
+                <IconButton icon={ArrowUp} label={t('setupAutomations.editor.moveUp')} disabled={i === 0} className="disabled:opacity-30" onClick={() => move(i, -1)} />
+                <IconButton icon={ArrowDown} label={t('setupAutomations.editor.moveDown')} disabled={i === value.length - 1} className="disabled:opacity-30" onClick={() => move(i, 1)} />
                 <IconButton
                   icon={Trash}
-                  label="Remove action"
+                  label={t('setupAutomations.editor.remove')}
                   className="hover:text-rose-600"
                   onClick={() => {
                     rows.remove(i);
@@ -609,16 +631,16 @@ export function ActionsEditor({
           )}
         >
           {(close) =>
-            types.map((t) => (
+            types.map((type) => (
               <MenuItem
-                key={t}
+                key={type}
                 onClick={() => {
                   rows.add();
-                  onChange([...value, blankAction(t, object, firstAgent)]);
+                  onChange([...value, blankAction(type, object, firstAgent)]);
                   close();
                 }}
               >
-                {ACTION_LABELS[t]}
+                {ACTION_LABELS[type]}
               </MenuItem>
             ))
           }

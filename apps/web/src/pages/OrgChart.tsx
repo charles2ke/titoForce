@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api.ts';
 import { Avatar, Badge, Button, cx, EmptyState, ErrorBanner, Loading } from '../components/ui.tsx';
-import { plural } from '../lib/format.ts';
+import { inSentence, t } from '../i18n/index.ts';
 import { useDebounced, useObjectDef } from '../lib/hooks.ts';
 
 interface OrgNode {
@@ -81,7 +81,7 @@ function Branch({ node, tree, depth, expanded, toggle }: { node: OrgNode; tree: 
           <button
             type="button"
             onClick={() => toggle(node.id)}
-            aria-label={`${open ? 'Collapse' : 'Expand'} ${node.name}'s team (${kids.length})`}
+            aria-label={t(open ? 'orgChart.collapseTeam' : 'orgChart.expandTeam', { name: node.name, count: kids.length })}
             className="grid size-6 shrink-0 place-items-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-700"
           >
             {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
@@ -90,7 +90,7 @@ function Branch({ node, tree, depth, expanded, toggle }: { node: OrgNode; tree: 
           <span className="size-6 shrink-0" />
         )}
         <PersonCard node={node} />
-        {kids.length > 0 && !open && <span className="ml-2 text-xs text-slate-400">{plural(kids.length, 'direct report')}</span>}
+        {kids.length > 0 && !open && <span className="ml-2 text-xs text-slate-400">{t('orgChart.directReports', { count: kids.length })}</span>}
       </div>
       {open && kids.length > 0 && (
         <ul role="group" className="mt-2 ml-3 space-y-2 border-l border-slate-200 pl-5">
@@ -133,19 +133,19 @@ export default function OrgChart() {
     <div className="mx-auto max-w-6xl space-y-4 p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Org chart</h1>
+          <h1 className="text-xl font-semibold text-slate-900">{t('orgChart.title')}</h1>
           <p className="text-sm text-slate-500">
-            {plural(nodes.length, def?.label.toLowerCase() ?? 'employee', def?.pluralLabel.toLowerCase() ?? 'employees')} · {plural(departments.length, 'department')} ·{' '}
-            {plural(nodes.filter((n) => n.directReports > 0).length, 'manager')}
+            {def ? t('orgChart.objectCount', { count: nodes.length, label: inSentence(def.label), pluralLabel: inSentence(def.pluralLabel) }) : t('orgChart.employeeCount', { count: nodes.length })} ·{' '}
+            {t('orgChart.departmentCount', { count: departments.length })} · {t('orgChart.managerCount', { count: nodes.filter((n) => n.directReports > 0).length })}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
-            <input className="input h-9 w-56 pl-8" placeholder="Search people…" aria-label="Search people" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input className="input h-9 w-56 pl-8" placeholder={t('orgChart.searchPlaceholder')} aria-label={t('orgChart.searchLabel')} value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <select className="input h-9 w-auto" aria-label="Department" value={department} onChange={(e) => setDepartment(e.target.value)}>
-            <option value="">All departments</option>
+          <select className="input h-9 w-auto" aria-label={t('orgChart.department')} value={department} onChange={(e) => setDepartment(e.target.value)}>
+            <option value="">{t('orgChart.allDepartments')}</option>
             {departments.map((d) => (
               <option key={d} value={d}>
                 {d}
@@ -155,10 +155,10 @@ export default function OrgChart() {
           {!filtering && (
             <>
               <Button size="sm" icon={ChevronsUpDown} onClick={() => setExpanded(new Set(nodes.filter((n) => tree.children.has(n.id)).map((n) => n.id)))}>
-                Expand all
+                {t('orgChart.expandAll')}
               </Button>
               <Button size="sm" icon={ChevronsDownUp} onClick={() => setExpanded(new Set())}>
-                Collapse all
+                {t('orgChart.collapseAll')}
               </Button>
             </>
           )}
@@ -167,12 +167,12 @@ export default function OrgChart() {
 
       <ErrorBanner error={q.error} />
       {!nodes.length && !q.error ? (
-        <EmptyState icon={Network} title="No employees yet">
-          Add {def?.pluralLabel.toLowerCase() ?? 'employees'} with a manager to build the org chart.
+        <EmptyState icon={Network} title={t('orgChart.empty.title')}>
+          {def ? t('orgChart.empty.bodyFor', { objects: inSentence(def.pluralLabel) }) : t('orgChart.empty.body')}
         </EmptyState>
       ) : filtering ? (
         matches.length ? (
-          <ul className="space-y-2" aria-label="Matching people">
+          <ul className="space-y-2" aria-label={t('orgChart.matchingPeople')}>
             {matches.slice(0, 200).map((n) => {
               const path = chain(tree, n.id);
               return (
@@ -182,13 +182,13 @@ export default function OrgChart() {
                 </li>
               );
             })}
-            {matches.length > 200 && <li className="text-xs text-slate-400">Showing the first 200 of {matches.length.toLocaleString()} matches.</li>}
+            {matches.length > 200 && <li className="text-xs text-slate-400">{t('orgChart.truncated', { limit: 200, total: matches.length })}</li>}
           </ul>
         ) : (
-          <p className="py-10 text-center text-sm text-slate-400">No one matches.</p>
+          <p className="py-10 text-center text-sm text-slate-400">{t('orgChart.noMatches')}</p>
         )
       ) : (
-        <ul role="tree" aria-label="Reporting lines" className="space-y-3 overflow-x-auto pb-4">
+        <ul role="tree" aria-label={t('orgChart.reportingLines')} className="space-y-3 overflow-x-auto pb-4">
           {roots.map((r) => (
             <Branch key={r.id} node={r} tree={tree} depth={0} expanded={open} toggle={toggle} />
           ))}

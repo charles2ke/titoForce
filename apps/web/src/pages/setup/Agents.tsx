@@ -8,29 +8,33 @@ import { api, errorMessage } from '../../api.ts';
 import { useConfirm, useToast } from '../../components/feedback.tsx';
 import { ColorPicker, IconPicker, InlineToggle } from '../../components/pickers.tsx';
 import { Badge, Button, cx, EmptyState, ErrorBanner, FormField, IconButton, Loading, Modal, ObjectTile, PageHeader, Spinner, Toggle } from '../../components/ui.tsx';
+import { type MessageKey, t, tryT } from '../../i18n/index.ts';
 import { useAgents, useAiStatus } from '../../lib/hooks.ts';
 
-const AUTONOMY: { id: AgentAutonomy; label: string; color: string; icon: LucideIcon; text: string }[] = [
-  { id: 'read_only', label: 'Read only', color: 'gray', icon: Eye, text: 'Looks up and analyzes data but never changes anything. Write tools are not offered to the agent.' },
+const AUTONOMY: { id: AgentAutonomy; label: MessageKey; color: string; icon: LucideIcon; text: MessageKey }[] = [
+  { id: 'read_only', label: 'setupAgents.autonomy.readOnly.label', color: 'gray', icon: Eye, text: 'setupAgents.autonomy.readOnly.text' },
   {
     id: 'approval_required',
-    label: 'Approval required',
+    label: 'setupAgents.autonomy.approvalRequired.label',
     color: 'yellow',
     icon: Hand,
-    text: 'Proposed changes are queued in Approvals and run only after the requesting user (or the record owner, for automation runs) approves them.',
+    text: 'setupAgents.autonomy.approvalRequired.text',
   },
   {
     id: 'autonomous',
-    label: 'Autonomous',
+    label: 'setupAgents.autonomy.autonomous.label',
     color: 'green',
     icon: Zap,
-    text: 'Changes run immediately, limited to what the requesting user — or the AI agent user, for automation runs — is allowed to do.',
+    text: 'setupAgents.autonomy.autonomous.text',
   },
 ];
 const autonomyOf = (a: AgentAutonomy) => AUTONOMY.find((x) => x.id === a) ?? AUTONOMY[0]!;
 
 const isPalette = (c: string): c is PaletteColor => (PALETTE as readonly string[]).includes(c);
-const toolLabel = (name: string) => name.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+// Tool names are keyed by the server's tool id in camelCase; unknown tools show their humanized id.
+const toolLabel = (name: string) => tryT(`setupAgents.toolNames.${name.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase())}`) ?? name.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+// Brand names (openai, anthropic) have no message and are shown as-is.
+const providerLabel = (provider: string) => tryT(`setupAgents.providers.${provider}`) ?? provider;
 
 function useTools() {
   return useQuery({ queryKey: ['ai-tools'], queryFn: () => api.get<ToolInfo[]>('/api/ai/tools'), staleTime: 10 * 60_000 });
@@ -40,7 +44,7 @@ function StatusCard() {
   const status = useAiStatus();
   const s = status.data;
   return (
-    <section aria-label="AI provider" className="card mb-6 flex flex-wrap items-start gap-4 p-4">
+    <section aria-label={t('setupAgents.status.title')} className="card mb-6 flex flex-wrap items-start gap-4 p-4">
       <div className={cx('flex size-10 shrink-0 items-center justify-center rounded-xl', s?.configured ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600')}>
         <BrainCircuit className="size-5" aria-hidden />
       </div>
@@ -52,31 +56,27 @@ function StatusCard() {
         ) : s ? (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-semibold text-slate-900">AI provider</h2>
+              <h2 className="text-sm font-semibold text-slate-900">{t('setupAgents.status.title')}</h2>
               {s.configured ? (
                 <Badge color="green">
-                  <CircleCheck className="size-3" aria-hidden /> Connected
+                  <CircleCheck className="size-3" aria-hidden /> {t('setupAgents.status.connected')}
                 </Badge>
               ) : (
-                <Badge color="yellow">Offline rules engine</Badge>
+                <Badge color="yellow">{t('setupAgents.status.offline')}</Badge>
               )}
             </div>
             <dl className="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-sm">
               <div className="flex gap-1.5">
-                <dt className="text-slate-500">Provider</dt>
-                <dd className="font-medium text-slate-800 capitalize">{s.provider}</dd>
+                <dt className="text-slate-500">{t('setupAgents.status.provider')}</dt>
+                <dd className="font-medium text-slate-800 capitalize">{providerLabel(s.provider)}</dd>
               </div>
               <div className="flex gap-1.5">
-                <dt className="text-slate-500">Model</dt>
+                <dt className="text-slate-500">{t('setupAgents.status.model')}</dt>
                 <dd className="font-medium text-slate-800">{s.model ?? '—'}</dd>
               </div>
             </dl>
             <p className="mt-1.5 text-sm text-slate-600">{s.note}</p>
-            {!s.configured && (
-              <p className="mt-1 text-xs text-slate-500">
-                Agents still work offline: the rules engine plans tool calls itself (agent instructions are not used) with the same tools, permissions and approval rules, so you can try everything without an API key.
-              </p>
-            )}
+            {!s.configured && <p className="mt-1 text-xs text-slate-500">{t('setupAgents.status.offlineNote')}</p>}
           </>
         ) : null}
       </div>
@@ -85,17 +85,17 @@ function StatusCard() {
 }
 
 function ToolList({ tools, kind, value, onChange, disabledNote }: { tools: ToolInfo[]; kind: 'read' | 'write'; value: string[]; onChange: (v: string[]) => void; disabledNote?: string }) {
-  const list = tools.filter((t) => t.kind === kind);
-  const names = list.map((t) => t.name);
+  const list = tools.filter((tool) => tool.kind === kind);
+  const names = list.map((tool) => tool.name);
   const all = names.every((n) => value.includes(n));
-  const title = kind === 'read' ? 'Read tools' : 'Write tools';
+  const title = t(`setupAgents.toolKinds.${kind}.title`);
   return (
     <fieldset aria-label={title} className="rounded-lg border border-slate-200">
       <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-2">
         <span className="text-sm font-medium text-slate-800">{title}</span>
-        <span className="text-xs text-slate-500">{kind === 'read' ? 'Look things up' : 'Create and change data'}</span>
+        <span className="text-xs text-slate-500">{t(`setupAgents.toolKinds.${kind}.text`)}</span>
         <Button size="sm" variant="ghost" className="ml-auto" onClick={() => onChange(all ? value.filter((v) => !names.includes(v)) : [...new Set([...value, ...names])])}>
-          {all ? `Clear ${kind} tools` : `Select all ${kind} tools`}
+          {all ? t(`setupAgents.toolKinds.${kind}.clear`) : t(`setupAgents.toolKinds.${kind}.selectAll`)}
         </Button>
       </div>
       {disabledNote && (
@@ -105,18 +105,18 @@ function ToolList({ tools, kind, value, onChange, disabledNote }: { tools: ToolI
         </p>
       )}
       <ul className="divide-y divide-slate-100">
-        {list.map((t) => (
-          <li key={t.name}>
+        {list.map((tool) => (
+          <li key={tool.name}>
             <label className="flex cursor-pointer items-start gap-2.5 px-3 py-2 hover:bg-slate-50">
               <input
                 type="checkbox"
                 className="mt-0.5 size-4 accent-indigo-600"
-                checked={value.includes(t.name)}
-                onChange={(e) => onChange(e.target.checked ? [...value, t.name] : value.filter((v) => v !== t.name))}
+                checked={value.includes(tool.name)}
+                onChange={(e) => onChange(e.target.checked ? [...value, tool.name] : value.filter((v) => v !== tool.name))}
               />
               <span className="min-w-0">
-                <span className="block text-sm font-medium text-slate-800">{toolLabel(t.name)}</span>
-                <span className="block text-xs text-slate-500">{t.description}</span>
+                <span className="block text-sm font-medium text-slate-800">{toolLabel(tool.name)}</span>
+                <span className="block text-xs text-slate-500">{tool.description}</span>
               </span>
             </label>
           </li>
@@ -144,9 +144,9 @@ function AgentForm({ agent, onClose }: { agent: AgentDef | null; onClose: () => 
 
   const known = tools.data ?? [];
   // Drop tools that no longer exist on the server; it rejects unknown names.
-  const effective = tools.data ? selected.filter((n) => known.some((t) => t.name === n)) : selected;
-  const writeSelected = known.filter((t) => t.kind === 'write' && selected.includes(t.name)).length;
-  const problem = !name.trim() ? 'Enter a name.' : !effective.length ? 'Choose at least one tool.' : null;
+  const effective = tools.data ? selected.filter((n) => known.some((tool) => tool.name === n)) : selected;
+  const writeSelected = known.filter((tool) => tool.kind === 'write' && selected.includes(tool.name)).length;
+  const problem = !name.trim() ? t('setupAgents.form.problems.enterName') : !effective.length ? t('setupAgents.form.problems.chooseTool') : null;
 
   const save = useMutation({
     mutationFn: () => {
@@ -154,7 +154,7 @@ function AgentForm({ agent, onClose }: { agent: AgentDef | null; onClose: () => 
       return isNew ? api.post<AgentDef>('/api/agents', body) : api.patch<AgentDef>(`/api/agents/${agent!.id}`, body);
     },
     onSuccess: async (saved) => {
-      toast.success(isNew ? `${saved.name} created` : `${saved.name} saved`);
+      toast.success(isNew ? t('setupAgents.toasts.created', { name: saved.name }) : t('setupAgents.toasts.saved', { name: saved.name }));
       onClose();
       await qc.invalidateQueries({ queryKey: ['agents'] });
     },
@@ -164,14 +164,14 @@ function AgentForm({ agent, onClose }: { agent: AgentDef | null; onClose: () => 
     <Modal
       open
       onClose={onClose}
-      title={isNew ? 'New agent' : `Edit ${agent?.name}`}
+      title={isNew ? t('setupAgents.new') : t('setupAgents.edit', { name: agent?.name ?? '' })}
       size="xl"
       footer={
         <>
           {problem && <span className="mr-auto text-xs text-slate-500">{problem}</span>}
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" type="submit" form={formId} disabled={!!problem} loading={save.isPending}>
-            {isNew ? 'Create agent' : 'Save agent'}
+            {isNew ? t('setupAgents.form.create') : t('setupAgents.form.save')}
           </Button>
         </>
       }
@@ -185,29 +185,29 @@ function AgentForm({ agent, onClose }: { agent: AgentDef | null; onClose: () => 
         }}
       >
         <ErrorBanner error={save.error} />
-        {agent?.builtIn && <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-800">This is a built-in agent. You can change it, but it can’t be deleted — deactivate it instead.</p>}
+        {agent?.builtIn && <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-800">{t('setupAgents.form.builtInNote')}</p>}
         <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
-          <FormField label="Name" required htmlFor={ids.name}>
-            <input id={ids.name} className="input" value={name} maxLength={80} placeholder="Renewal assistant" onChange={(e) => setName(e.target.value)} />
+          <FormField label={t('common.name')} required htmlFor={ids.name}>
+            <input id={ids.name} className="input" value={name} maxLength={80} placeholder={t('setupAgents.form.namePlaceholder')} onChange={(e) => setName(e.target.value)} />
           </FormField>
-          <FormField label="Icon" htmlFor={ids.icon} className="sm:w-56">
+          <FormField label={t('common.icon')} htmlFor={ids.icon} className="sm:w-56">
             <IconPicker id={ids.icon} value={icon} onChange={setIcon} />
           </FormField>
-          <FormField label="Description" htmlFor={ids.desc} help="Shown to people choosing an agent to chat with.">
+          <FormField label={t('common.description')} htmlFor={ids.desc} help={t('setupAgents.form.descriptionHelp')}>
             <textarea id={ids.desc} className="input" rows={2} maxLength={1000} value={description} onChange={(e) => setDescription(e.target.value)} />
           </FormField>
           <div className="sm:w-56">
-            <span className="label">Color</span>
+            <span className="label">{t('common.color')}</span>
             <ColorPicker value={color} onChange={setColor} size="sm" />
           </div>
         </div>
-        <FormField label="Instructions" htmlFor={ids.instructions} help={`The agent’s goal, tone, steps and limits — used as the system prompt when an LLM provider is configured. ${instructions.length}/8000 characters.`}>
+        <FormField label={t('setupAgents.form.instructions')} htmlFor={ids.instructions} help={t('setupAgents.form.instructionsHelp', { length: String(instructions.length) })}>
           <textarea
             id={ids.instructions}
             className="input font-mono text-xs leading-relaxed"
             rows={8}
             maxLength={8000}
-            placeholder={'You help account managers prepare renewals.\n1. Look up the account and its open opportunities.\n2. Summarize risks and suggest next steps.'}
+            placeholder={t('setupAgents.form.instructionsPlaceholder')}
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}
           />
@@ -215,7 +215,7 @@ function AgentForm({ agent, onClose }: { agent: AgentDef | null; onClose: () => 
 
         <div>
           <span id={ids.autonomy} className="label">
-            Autonomy
+            {t('setupAgents.form.autonomy')}
           </span>
           <div role="radiogroup" aria-labelledby={ids.autonomy} className="grid gap-2 sm:grid-cols-3">
             {AUTONOMY.map((a) => (
@@ -224,9 +224,9 @@ function AgentForm({ agent, onClose }: { agent: AgentDef | null; onClose: () => 
                 <span>
                   <span className="flex items-center gap-1.5 text-sm font-medium text-slate-800">
                     <a.icon className="size-3.5 text-slate-500" aria-hidden />
-                    {a.label}
+                    {t(a.label)}
                   </span>
-                  <span className="mt-0.5 block text-xs text-slate-500">{a.text}</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">{t(a.text)}</span>
                 </span>
               </label>
             ))}
@@ -235,10 +235,8 @@ function AgentForm({ agent, onClose }: { agent: AgentDef | null; onClose: () => 
 
         <div className="space-y-3">
           <div>
-            <span className="label">Tools</span>
-            <p className="text-xs text-slate-500">
-              {effective.length} selected. Agents can only use the tools you enable here, and every tool call is checked against the permissions of the user the agent acts for.
-            </p>
+            <span className="label">{t('setupAgents.form.tools')}</span>
+            <p className="text-xs text-slate-500">{t('setupAgents.form.toolsHelp', { count: effective.length })}</p>
           </div>
           {tools.isLoading ? (
             <Loading />
@@ -252,13 +250,13 @@ function AgentForm({ agent, onClose }: { agent: AgentDef | null; onClose: () => 
                 kind="write"
                 value={selected}
                 onChange={setSelected}
-                disabledNote={autonomy === 'read_only' && writeSelected ? 'This agent is read only, so the selected write tools are ignored.' : undefined}
+                disabledNote={autonomy === 'read_only' && writeSelected ? t('setupAgents.form.writeToolsIgnored') : undefined}
               />
             </div>
           )}
         </div>
 
-        <Toggle checked={active} onChange={setActive} label="Active" />
+        <Toggle checked={active} onChange={setActive} label={t('common.active')} />
       </form>
     </Modal>
   );
@@ -277,14 +275,14 @@ export default function Agents() {
     onMutate: ({ a, active }) => {
       qc.setQueryData<AgentDef[]>(['agents'], (old) => old?.map((x) => (x.id === a.id ? { ...x, active } : x)));
     },
-    onSuccess: (_r, { a, active }) => toast.success(`${a.name} ${active ? 'activated' : 'deactivated'}`),
+    onSuccess: (_r, { a, active }) => toast.success(active ? t('setupAgents.toasts.activated', { name: a.name }) : t('setupAgents.toasts.deactivated', { name: a.name })),
     onError: (e) => toast.error(errorMessage(e)),
     onSettled: () => qc.invalidateQueries({ queryKey: ['agents'] }),
   });
   const remove = useMutation({
     mutationFn: (a: AgentDef) => api.del(`/api/agents/${a.id}`),
     onSuccess: async (_r, a) => {
-      toast.success(`${a.name} deleted`);
+      toast.success(t('setupAgents.toasts.deleted', { name: a.name }));
       await qc.invalidateQueries({ queryKey: ['agents'] });
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -296,15 +294,15 @@ export default function Agents() {
   return (
     <div className="mx-auto max-w-7xl p-6">
       <PageHeader
-        title="AI agents"
-        subtitle="Configure the assistants people chat with and that automations can run."
+        title={t('setupAgents.title')}
+        subtitle={t('setupAgents.subtitle')}
         actions={
           <>
             <Link to="/setup/runs?tab=agents" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-700 shadow-xs hover:bg-slate-50">
-              <History className="size-4" aria-hidden /> Run history
+              <History className="size-4" aria-hidden /> {t('setupAgents.runHistory')}
             </Link>
             <Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>
-              New agent
+              {t('setupAgents.new')}
             </Button>
           </>
         }
@@ -313,7 +311,7 @@ export default function Agents() {
 
       <div className="relative mb-4 w-full max-w-xs">
         <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-slate-400" aria-hidden />
-        <input type="search" aria-label="Search agents" placeholder="Search agents…" className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input type="search" aria-label={t('setupAgents.list.searchLabel')} placeholder={t('setupAgents.list.searchPlaceholder')} className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
 
       {agents.isLoading ? (
@@ -324,16 +322,16 @@ export default function Agents() {
         <div className="card">
           <EmptyState
             icon={Bot}
-            title={term ? 'No agents match' : 'No agents yet'}
+            title={term ? t('setupAgents.list.noMatch') : t('setupAgents.list.empty')}
             action={
               term ? undefined : (
                 <Button variant="primary" icon={Plus} onClick={() => setEditing('new')}>
-                  Create your first agent
+                  {t('setupAgents.list.createFirst')}
                 </Button>
               )
             }
           >
-            {!term && 'Agents answer questions and take actions in the CRM using the tools you allow.'}
+            {!term && t('setupAgents.list.emptyText')}
           </EmptyState>
         </div>
       ) : (
@@ -349,49 +347,47 @@ export default function Agents() {
                       <button type="button" className="truncate text-left font-semibold text-slate-900 hover:text-indigo-700" onClick={() => setEditing(a)}>
                         {a.name}
                       </button>
-                      {a.builtIn && <Badge color="indigo">Built-in</Badge>}
-                      {!a.active && <Badge color="gray">Inactive</Badge>}
+                      {a.builtIn && <Badge color="indigo">{t('setupAgents.list.builtIn')}</Badge>}
+                      {!a.active && <Badge color="gray">{t('common.inactive')}</Badge>}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
                       <Badge color={au.color}>
-                        <au.icon className="size-3" aria-hidden /> {au.label}
+                        <au.icon className="size-3" aria-hidden /> {t(au.label)}
                       </Badge>
-                      <span className="text-xs text-slate-500">
-                        {a.tools.length} tool{a.tools.length === 1 ? '' : 's'}
-                      </span>
+                      <span className="text-xs text-slate-500">{t('setupAgents.list.toolCount', { count: a.tools.length })}</span>
                     </div>
                   </div>
-                  <InlineToggle checked={a.active} label={`${a.name} active`} disabled={toggle.isPending} onChange={(active) => toggle.mutate({ a, active })} />
+                  <InlineToggle checked={a.active} label={t('setupAgents.list.activeLabel', { name: a.name })} disabled={toggle.isPending} onChange={(active) => toggle.mutate({ a, active })} />
                 </div>
-                <p className="mt-3 line-clamp-3 flex-1 text-sm text-slate-600">{a.description || <span className="text-slate-400">No description</span>}</p>
+                <p className="mt-3 line-clamp-3 flex-1 text-sm text-slate-600">{a.description || <span className="text-slate-400">{t('setupAgents.list.noDescription')}</span>}</p>
                 <div className="mt-4 flex items-center gap-1 border-t border-slate-100 pt-3">
                   {a.active ? (
-                    <Link to={`/agents/${encodeURIComponent(a.id)}`} aria-label={`Chat with ${a.name}`} className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50">
-                      <MessageSquare className="size-3.5" aria-hidden /> Chat
+                    <Link to={`/agents/${encodeURIComponent(a.id)}`} aria-label={t('setupAgents.list.chatWith', { name: a.name })} className="inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50">
+                      <MessageSquare className="size-3.5" aria-hidden /> {t('setupAgents.list.chat')}
                     </Link>
                   ) : (
-                    <span className="px-2.5 text-xs text-slate-400">Activate to chat</span>
+                    <span className="px-2.5 text-xs text-slate-400">{t('setupAgents.list.activateToChat')}</span>
                   )}
                   <Link
                     to={`/setup/runs?tab=agents&agentId=${encodeURIComponent(a.id)}`}
-                    aria-label={`Run history of ${a.name}`}
-                    title="Run history"
+                    aria-label={t('setupAgents.list.runHistoryOf', { name: a.name })}
+                    title={t('setupAgents.runHistory')}
                     className="ml-auto inline-flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                   >
                     <History className="size-4" aria-hidden />
                   </Link>
-                  <IconButton icon={Pencil} label={`Edit ${a.name}`} onClick={() => setEditing(a)} />
+                  <IconButton icon={Pencil} label={t('setupAgents.edit', { name: a.name })} onClick={() => setEditing(a)} />
                   {!a.builtIn && (
                     <IconButton
                       icon={Trash}
-                      label={`Delete ${a.name}`}
+                      label={t('setupAgents.list.delete', { name: a.name })}
                       className="hover:text-rose-600"
                       disabled={remove.isPending}
                       onClick={async () => {
                         const ok = await confirm({
-                          title: `Delete ${a.name}?`,
-                          message: 'People can no longer chat with this agent. Agents used by an automation can’t be deleted.',
-                          confirmLabel: 'Delete agent',
+                          title: t('setupAgents.list.deleteTitle', { name: a.name }),
+                          message: t('setupAgents.list.deleteMessage'),
+                          confirmLabel: t('setupAgents.list.deleteConfirm'),
                           danger: true,
                         });
                         if (ok) remove.mutate(a);

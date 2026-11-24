@@ -8,8 +8,10 @@ import { completeFilter, FilterEditor } from '../components/FilterEditor.tsx';
 import { useConfirm, useToast } from '../components/feedback.tsx';
 import { ReportChart } from '../components/ReportChart.tsx';
 import { Button, Card, cx, EmptyState, ErrorBanner, FormField, Loading, PageHeader, Spinner } from '../components/ui.tsx';
-import { formatNumber, plural } from '../lib/format.ts';
+import { type MessageKey, t, tx } from '../i18n/index.ts';
+import { formatNumber } from '../lib/format.ts';
 import { useApps, useDebounced, useObjects, usePermissions } from '../lib/hooks.ts';
+import { localizeResult } from '../lib/reports.ts';
 
 type Sort = ReportDef['sort'];
 type Spec = Pick<ReportDef, 'object' | 'filters' | 'groupBy' | 'metric' | 'sort' | 'limit'>;
@@ -33,44 +35,44 @@ interface Draft {
   app: string;
 }
 
-const CHARTS: { id: ChartType; label: string; icon: LucideIcon }[] = [
-  { id: 'bar', label: 'Bar', icon: ChartBar },
-  { id: 'column', label: 'Column', icon: ChartColumn },
-  { id: 'line', label: 'Line', icon: ChartLine },
-  { id: 'pie', label: 'Pie', icon: ChartPie },
-  { id: 'donut', label: 'Donut', icon: Donut },
-  { id: 'kpi', label: 'KPI', icon: Gauge },
-  { id: 'table', label: 'Table', icon: Table2 },
-  { id: 'funnel', label: 'Funnel', icon: Funnel },
+const CHARTS: { id: ChartType; label: MessageKey; icon: LucideIcon }[] = [
+  { id: 'bar', label: 'reports.charts.bar', icon: ChartBar },
+  { id: 'column', label: 'reports.charts.column', icon: ChartColumn },
+  { id: 'line', label: 'reports.charts.line', icon: ChartLine },
+  { id: 'pie', label: 'reports.charts.pie', icon: ChartPie },
+  { id: 'donut', label: 'reports.charts.donut', icon: Donut },
+  { id: 'kpi', label: 'reports.charts.kpi', icon: Gauge },
+  { id: 'table', label: 'reports.charts.table', icon: Table2 },
+  { id: 'funnel', label: 'reports.charts.funnel', icon: Funnel },
 ];
 
-const FNS: { id: MetricFn; label: string }[] = [
-  { id: 'count', label: 'Count of records' },
-  { id: 'sum', label: 'Sum' },
-  { id: 'avg', label: 'Average' },
-  { id: 'min', label: 'Minimum' },
-  { id: 'max', label: 'Maximum' },
+const FNS: { id: MetricFn; label: MessageKey }[] = [
+  { id: 'count', label: 'reports.builder.fns.count' },
+  { id: 'sum', label: 'reports.builder.fns.sum' },
+  { id: 'avg', label: 'reports.builder.fns.avg' },
+  { id: 'min', label: 'reports.builder.fns.min' },
+  { id: 'max', label: 'reports.builder.fns.max' },
 ];
 
-const SORTS: { id: Sort; label: string }[] = [
-  { id: 'natural', label: 'Natural order (picklist order, dates in order)' },
-  { id: 'label', label: 'Label (A–Z)' },
-  { id: 'value_desc', label: 'Value (highest first)' },
-  { id: 'value_asc', label: 'Value (lowest first)' },
+const SORTS: { id: Sort; label: MessageKey }[] = [
+  { id: 'natural', label: 'reports.builder.sorts.natural' },
+  { id: 'label', label: 'reports.builder.sorts.label' },
+  { id: 'value_desc', label: 'reports.builder.sorts.valueDesc' },
+  { id: 'value_asc', label: 'reports.builder.sorts.valueAsc' },
 ];
 
-const INTERVALS: { id: DateInterval; label: string }[] = [
-  { id: 'day', label: 'Day' },
-  { id: 'month', label: 'Month' },
-  { id: 'quarter', label: 'Quarter' },
-  { id: 'year', label: 'Year' },
+const INTERVALS: { id: DateInterval; label: MessageKey }[] = [
+  { id: 'day', label: 'reports.builder.intervals.day' },
+  { id: 'month', label: 'reports.builder.intervals.month' },
+  { id: 'quarter', label: 'reports.builder.intervals.quarter' },
+  { id: 'year', label: 'reports.builder.intervals.year' },
 ];
 
 // System columns the server can group by, besides the object's own fields.
-const SYSTEM_GROUPS: FieldDef[] = [
-  { apiName: 'owner_id', label: 'Owner', type: 'user' },
-  { apiName: 'created_at', label: 'Created Date', type: 'datetime' },
-  { apiName: 'updated_at', label: 'Last Modified', type: 'datetime' },
+const SYSTEM_GROUPS: (Omit<FieldDef, 'label'> & { label: MessageKey })[] = [
+  { apiName: 'owner_id', label: 'common.owner', type: 'user' },
+  { apiName: 'created_at', label: 'reports.createdDate', type: 'datetime' },
+  { apiName: 'updated_at', label: 'common.lastModified', type: 'datetime' },
 ];
 
 const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
@@ -132,7 +134,7 @@ function parseLimit(raw: string): { value: number | null; error: string | null }
   const s = raw.trim();
   if (!s) return { value: null, error: null };
   const n = Number(s);
-  return Number.isInteger(n) && n >= 1 && n <= 100 ? { value: n, error: null } : { value: null, error: 'Enter a whole number from 1 to 100, or leave it empty' };
+  return Number.isInteger(n) && n >= 1 && n <= 100 ? { value: n, error: null } : { value: null, error: t('reports.builder.limitError') };
 }
 
 function Builder({ id, initial, loadError }: { id: string | undefined; initial: Draft; loadError: unknown }) {
@@ -150,7 +152,7 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
   const objectList = [...(objects.data ?? [])].sort(byLabel);
   const def = objectList.find((o) => o.apiName === draft.object);
   const groupFields = def ? groupableFields(def) : [];
-  const systemGroups = def ? SYSTEM_GROUPS : [];
+  const systemGroups: FieldDef[] = def ? SYSTEM_GROUPS.map((f) => ({ ...f, label: t(f.label) })) : [];
   const groupDef = [...groupFields, ...systemGroups].find((f) => f.apiName === draft.groupField);
   const grouped = !!draft.groupField;
   const dateGroup = isDateField(groupDef);
@@ -158,10 +160,10 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
   const metricDef = numFields.find((f) => f.apiName === draft.metricField);
   const limit = parseLimit(draft.limit);
 
-  const nameError = draft.name.trim() ? null : 'Name is required';
-  const objectError = def ? null : 'Choose an object';
-  const groupError = grouped && !groupDef ? 'This field is no longer available. Choose another one.' : null;
-  const metricError = draft.fn !== 'count' && !metricDef ? 'Choose a numeric field' : null;
+  const nameError = draft.name.trim() ? null : t('reports.builder.nameRequired');
+  const objectError = def ? null : t('reports.builder.chooseObject');
+  const groupError = grouped && !groupDef ? t('reports.builder.groupFieldGone') : null;
+  const metricError = draft.fn !== 'count' && !metricDef ? t('reports.builder.chooseNumericField') : null;
   const limitError = grouped ? limit.error : null;
   const specValid = !objectError && !groupError && !metricError;
 
@@ -178,18 +180,20 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
   const debounced = useDebounced(specJson, 400);
   const preview = useQuery({
     queryKey: ['report-preview', debounced],
-    queryFn: () => api.post<ReportResult>('/api/reports/preview', JSON.parse(debounced) as Spec),
+    queryFn: () => api.post<ReportResult>('/api/reports/preview?deferLabelLimit=1', JSON.parse(debounced) as Spec),
     placeholderData: keepPreviousData,
     enabled: specValid,
   });
-  const previewFn = (JSON.parse(debounced) as Spec).metric.fn;
+  const previewSpec = JSON.parse(debounced) as Spec;
+  const previewFn = previewSpec.metric.fn;
+  const previewResult = preview.data && localizeResult(preview.data, objectList.find((o) => o.apiName === previewSpec.object), previewSpec);
   const updating = specValid && (preview.isFetching || specJson !== debounced);
 
   const save = useMutation({
     mutationFn: (body: ReportInput) => (id ? api.patch<ReportDef>(`/api/reports/${encodeURIComponent(id)}`, body) : api.post<ReportDef>('/api/reports', body)),
     onSuccess: async (saved) => {
       await Promise.all(['reports', 'report', 'dashboard'].map((k) => qc.invalidateQueries({ queryKey: [k] })));
-      toast.success(id ? `Report “${saved.name}” saved` : `Report “${saved.name}” created`);
+      toast.success(id ? t('reports.builder.saved', { name: saved.name }) : t('reports.builder.created', { name: saved.name }));
       navigate(`/reports/${saved.id}`);
     },
   });
@@ -206,7 +210,7 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
 
   const cancel = async () => {
     const dirty = JSON.stringify(draft) !== JSON.stringify(start);
-    if (dirty && !(await confirm({ title: 'Discard changes?', message: 'Your changes to this report have not been saved.', confirmLabel: 'Discard', danger: true }))) return;
+    if (dirty && !(await confirm({ title: t('reports.builder.discardTitle'), message: t('reports.builder.discardMessage'), confirmLabel: t('reports.builder.discard'), danger: true }))) return;
     navigate(id ? `/reports/${id}` : '/reports');
   };
 
@@ -225,13 +229,13 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
       <PageHeader
         icon="chart-column"
         color="blue"
-        title={id ? 'Edit report' : 'New report'}
-        subtitle={id ? start.name : 'Choose the records, what to measure and how to group it, then pick a chart.'}
+        title={id ? t('reports.builder.editTitle') : t('reports.newReport')}
+        subtitle={id ? start.name : t('reports.builder.newSubtitle')}
         actions={
           <>
-            <Button onClick={() => void cancel()}>Cancel</Button>
+            <Button onClick={() => void cancel()}>{t('common.cancel')}</Button>
             <Button variant="primary" icon={Save} loading={save.isPending} onClick={submit}>
-              {id ? 'Save report' : 'Create report'}
+              {id ? t('reports.builder.save') : t('reports.builder.create')}
             </Button>
           </>
         }
@@ -240,24 +244,24 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
       {loadError ? (
         <div role="status" className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <span>This report cannot run as saved ({errorMessage(loadError)}). Fix it below and save.</span>
+          <span>{t('reports.builder.cannotRun', { error: errorMessage(loadError) })}</span>
         </div>
       ) : null}
       <ErrorBanner error={save.error} className="mb-4" />
 
       <div className="grid items-start gap-6 @5xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="@container min-w-0 space-y-6">
-          <Card title="Details">
+          <Card title={t('common.details')}>
             <div className="grid gap-4 @md:grid-cols-2">
-              <FormField label="Name" htmlFor="report-name" required error={attempted ? nameError : null} className="@md:col-span-2">
-                <input id="report-name" className="input" value={draft.name} maxLength={120} placeholder="e.g. Open pipeline by stage" onChange={(e) => set({ name: e.target.value })} />
+              <FormField label={t('common.name')} htmlFor="report-name" required error={attempted ? nameError : null} className="@md:col-span-2">
+                <input id="report-name" className="input" value={draft.name} maxLength={120} placeholder={t('reports.builder.namePlaceholder')} onChange={(e) => set({ name: e.target.value })} />
               </FormField>
-              <FormField label="Description" htmlFor="report-description" className="@md:col-span-2">
+              <FormField label={t('common.description')} htmlFor="report-description" className="@md:col-span-2">
                 <textarea id="report-description" className="input" rows={2} maxLength={1000} value={draft.description} onChange={(e) => set({ description: e.target.value })} />
               </FormField>
-              <FormField label="Object" htmlFor="report-object" required error={objectError} help="Changing the object resets the filters, grouping and measured field.">
+              <FormField label={t('common.object')} htmlFor="report-object" required error={objectError} help={t('reports.builder.objectHelp')}>
                 <select id="report-object" className="input" value={draft.object} onChange={(e) => changeObject(e.target.value)}>
-                  {!def && <option value={draft.object}>{draft.object ? `${draft.object} (unavailable)` : 'Choose an object…'}</option>}
+                  {!def && <option value={draft.object}>{draft.object ? t('reports.builder.unavailable', { name: draft.object }) : t('reports.builder.chooseObjectOption')}</option>}
                   {objectList.map((o) => (
                     <option key={o.apiName} value={o.apiName}>
                       {o.label}
@@ -265,9 +269,9 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
                   ))}
                 </select>
               </FormField>
-              <FormField label="App" htmlFor="report-app" help="Lists the report under an app.">
+              <FormField label={t('reports.builder.app')} htmlFor="report-app" help={t('reports.builder.appHelp')}>
                 <select id="report-app" className="input" value={draft.app} onChange={(e) => set({ app: e.target.value })}>
-                  <option value="">None</option>
+                  <option value="">{t('common.none')}</option>
                   {draft.app && !apps.data?.some((a) => a.id === draft.app) && <option value={draft.app}>{draft.app}</option>}
                   {apps.data?.map((a) => (
                     <option key={a.id} value={a.id}>
@@ -279,25 +283,25 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
             </div>
           </Card>
 
-          <Card title="Filters">
+          <Card title={t('reports.filters')}>
             {def ? (
               <>
                 <FilterEditor def={def} value={draft.filters} onChange={(filters) => set({ filters })} />
-                <p className="mt-3 text-xs text-slate-500">Conditions without a value are ignored. Each viewer only counts the records they have access to.</p>
+                <p className="mt-3 text-xs text-slate-500">{t('reports.builder.filtersHelp')}</p>
               </>
             ) : (
-              <p className="text-sm text-slate-500">Choose an object to add filters.</p>
+              <p className="text-sm text-slate-500">{t('reports.builder.filtersNeedObject')}</p>
             )}
           </Card>
 
-          <Card title="Group & measure">
+          <Card title={t('reports.builder.groupAndMeasure')}>
             <div className="grid gap-4 @md:grid-cols-2">
-              <FormField label="Group by" htmlFor="report-group" error={groupError}>
+              <FormField label={t('reports.builder.groupBy')} htmlFor="report-group" error={groupError}>
                 <select id="report-group" className="input" value={draft.groupField} onChange={(e) => changeGroup(e.target.value)}>
-                  <option value="">None (single value)</option>
-                  {grouped && !groupDef && <option value={draft.groupField}>{draft.groupField} (unavailable)</option>}
+                  <option value="">{t('reports.builder.noGrouping')}</option>
+                  {grouped && !groupDef && <option value={draft.groupField}>{t('reports.builder.unavailable', { name: draft.groupField })}</option>}
                   {groupFields.length > 0 && (
-                    <optgroup label="Fields">
+                    <optgroup label={t('reports.builder.fieldOptions')}>
                       {groupFields.map((f) => (
                         <option key={f.apiName} value={f.apiName}>
                           {f.label}
@@ -306,7 +310,7 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
                     </optgroup>
                   )}
                   {systemGroups.length > 0 && (
-                    <optgroup label="System">
+                    <optgroup label={t('reports.builder.systemOptions')}>
                       {systemGroups.map((f) => (
                         <option key={f.apiName} value={f.apiName}>
                           {f.label}
@@ -317,34 +321,36 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
                 </select>
               </FormField>
               {dateGroup && (
-                <FormField label="Date interval" htmlFor="report-interval">
+                <FormField label={t('reports.builder.dateInterval')} htmlFor="report-interval">
                   <select id="report-interval" className="input" value={draft.interval} onChange={(e) => set({ interval: e.target.value as DateInterval })}>
                     {INTERVALS.map((i) => (
                       <option key={i.id} value={i.id}>
-                        {i.label}
+                        {t(i.label)}
                       </option>
                     ))}
                   </select>
                 </FormField>
               )}
               <FormField
-                label="Measure"
+                label={t('reports.builder.measure')}
                 htmlFor="report-fn"
                 className="@md:col-start-1"
-                help={def && numFields.length === 0 ? `${def.label} has no numeric fields, so only record counts are available.` : undefined}
+                help={def && numFields.length === 0 ? t('reports.builder.noNumericFields', { object: def.label }) : undefined}
               >
                 <select id="report-fn" className="input" value={draft.fn} onChange={(e) => changeFn(e.target.value as MetricFn)}>
                   {FNS.map((f) => (
                     <option key={f.id} value={f.id} disabled={f.id !== 'count' && numFields.length === 0 && draft.fn !== f.id}>
-                      {f.label}
+                      {t(f.label)}
                     </option>
                   ))}
                 </select>
               </FormField>
               {draft.fn !== 'count' && (
-                <FormField label="Of field" htmlFor="report-metric-field" required error={metricError}>
+                <FormField label={t('reports.builder.ofField')} htmlFor="report-metric-field" required error={metricError}>
                   <select id="report-metric-field" className="input" value={draft.metricField} onChange={(e) => set({ metricField: e.target.value })}>
-                    {!metricDef && <option value={draft.metricField}>{draft.metricField ? `${draft.metricField} (not available)` : 'Choose a field…'}</option>}
+                    {!metricDef && (
+                      <option value={draft.metricField}>{draft.metricField ? t('reports.builder.notAvailable', { name: draft.metricField }) : t('reports.builder.chooseFieldOption')}</option>
+                    )}
                     {numFields.map((f) => (
                       <option key={f.apiName} value={f.apiName}>
                         {f.label}
@@ -355,16 +361,16 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
               )}
               {grouped && (
                 <>
-                  <FormField label="Sort groups by" htmlFor="report-sort" className="@md:col-start-1">
+                  <FormField label={t('reports.builder.sortBy')} htmlFor="report-sort" className="@md:col-start-1">
                     <select id="report-sort" className="input" value={draft.sort} onChange={(e) => set({ sort: e.target.value as Sort })}>
                       {SORTS.map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.label}
+                          {t(s.label)}
                         </option>
                       ))}
                     </select>
                   </FormField>
-                  <FormField label="Show at most" htmlFor="report-limit" error={limitError} help="Number of groups (1–100). Leave empty to show all.">
+                  <FormField label={t('reports.builder.limit')} htmlFor="report-limit" error={limitError} help={t('reports.builder.limitHelp')}>
                     <input
                       id="report-limit"
                       type="number"
@@ -373,7 +379,7 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
                       max={100}
                       step={1}
                       className="input"
-                      placeholder="All groups"
+                      placeholder={t('reports.builder.limitPlaceholder')}
                       value={draft.limit}
                       onChange={(e) => set({ limit: e.target.value })}
                     />
@@ -383,9 +389,9 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
             </div>
           </Card>
 
-          <Card title="Chart">
+          <Card title={t('reports.builder.chart')}>
             <fieldset>
-              <legend className="sr-only">Chart type</legend>
+              <legend className="sr-only">{t('reports.builder.chartType')}</legend>
               <div className="grid grid-cols-4 gap-2">
                 {CHARTS.map((c) => {
                   const active = draft.chart === c.id;
@@ -400,33 +406,35 @@ function Builder({ id, initial, loadError }: { id: string | undefined; initial: 
                     >
                       <input type="radio" name="report-chart" value={c.id} checked={active} onChange={() => set({ chart: c.id })} className="sr-only" />
                       <c.icon className="size-5" aria-hidden />
-                      {c.label}
+                      {t(c.label)}
                     </label>
                   );
                 })}
               </div>
             </fieldset>
-            {draft.chart === 'kpi' && grouped && <p className="mt-3 text-xs text-slate-500">A KPI shows only the overall value. The grouped breakdown is still listed in the report’s data table.</p>}
-            {!grouped && draft.chart !== 'kpi' && <p className="mt-3 text-xs text-slate-500">Without grouping the report has a single value, so a KPI usually works best.</p>}
+            {draft.chart === 'kpi' && grouped && <p className="mt-3 text-xs text-slate-500">{t('reports.builder.kpiGroupedHint')}</p>}
+            {!grouped && draft.chart !== 'kpi' && <p className="mt-3 text-xs text-slate-500">{t('reports.builder.ungroupedHint')}</p>}
           </Card>
         </div>
 
         <div className="min-w-0 @5xl:sticky @5xl:top-6">
-          <Card title="Preview" actions={updating ? <Spinner className="size-4" /> : null}>
+          <Card title={t('reports.builder.preview')} actions={updating ? <Spinner className="size-4" /> : null}>
             {!specValid ? (
               <p className="py-12 text-center text-sm text-slate-400">{objectError ?? groupError ?? metricError}</p>
             ) : preview.error ? (
               <ErrorBanner error={preview.error} />
-            ) : preview.data ? (
+            ) : preview.data && previewResult ? (
               <div className={cx('transition-opacity', preview.isPlaceholderData && 'opacity-60')}>
-                <ReportChart chart={draft.chart} result={preview.data} height={300} />
+                <ReportChart chart={draft.chart} result={previewResult} height={300} />
                 <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
-                  {plural(preview.data.rows.length, 'row')} · {previewFn === 'count' || previewFn === 'sum' ? 'total' : 'overall'}{' '}
-                  <span className="font-medium text-slate-700 tabular-nums">{formatNumber(preview.data.total, preview.data.format)}</span>
+                  {t('reports.builder.previewRows', { count: previewResult.rows.length })} ·{' '}
+                  {tx(previewFn === 'count' || previewFn === 'sum' ? 'reports.builder.previewTotal' : 'reports.builder.previewOverall', {
+                    value: <span className="font-medium text-slate-700 tabular-nums">{formatNumber(preview.data.total, preview.data.format)}</span>,
+                  })}
                 </p>
               </div>
             ) : (
-              <Loading label="Running preview…" />
+              <Loading label={t('reports.builder.runningPreview')} />
             )}
           </Card>
         </div>
@@ -452,7 +460,7 @@ export default function ReportBuilder() {
   const back = id ? `/reports/${id}` : '/reports';
   const backLink = (
     <Link to={back} className="text-sm font-medium text-indigo-600 hover:underline">
-      {id ? 'Back to report' : 'Back to reports'}
+      {id ? t('reports.builder.backToReport') : t('reports.backToList')}
     </Link>
   );
 
@@ -460,8 +468,8 @@ export default function ReportBuilder() {
     return (
       <div className="p-6">
         <div className="card">
-          <EmptyState icon={Lock} title="You don’t have permission to edit reports" action={backLink}>
-            Creating and editing reports requires the Setup or Manage Automations permission. You can still view and run existing reports.
+          <EmptyState icon={Lock} title={t('reports.builder.noPermissionTitle')} action={backLink}>
+            {t('reports.builder.noPermissionMessage')}
           </EmptyState>
         </div>
       </div>
@@ -485,18 +493,18 @@ export default function ReportBuilder() {
           <div className="card">
             <EmptyState
               icon={ChartColumn}
-              title="Report not found"
+              title={t('reports.notFound')}
               action={
                 <Link to="/reports" className="text-sm font-medium text-indigo-600 hover:underline">
-                  Back to reports
+                  {t('reports.backToList')}
                 </Link>
               }
             >
-              It may have been deleted.
+              {t('reports.builder.deletedMessage')}
             </EmptyState>
           </div>
         ) : (
-          <ErrorBanner error={reportQ.error ?? listQ.error ?? 'This report could not be loaded.'} />
+          <ErrorBanner error={reportQ.error ?? listQ.error ?? t('reports.builder.loadFailed')} />
         )}
       </div>
     );
@@ -505,8 +513,8 @@ export default function ReportBuilder() {
     return (
       <div className="p-6">
         <div className="card">
-          <EmptyState icon={ChartColumn} title="No objects to report on" action={backLink}>
-            You need read access to at least one object to build a report.
+          <EmptyState icon={ChartColumn} title={t('reports.builder.noObjectsTitle')} action={backLink}>
+            {t('reports.builder.noObjectsMessage')}
           </EmptyState>
         </div>
       </div>

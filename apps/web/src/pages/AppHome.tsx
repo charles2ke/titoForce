@@ -6,12 +6,13 @@ import { api, errorMessage } from '../api.ts';
 import { DashboardGrid, useDashboard } from '../components/DashboardGrid.tsx';
 import { useToast } from '../components/feedback.tsx';
 import { Badge, Button, Card, cx, EmptyState, ErrorBanner, Loading, ObjectTile } from '../components/ui.tsx';
-import { formatDate, plural, relativeTime, todayIso } from '../lib/format.ts';
+import { type MessageKey, t } from '../i18n/index.ts';
+import { formatDate, relativeTime, todayIso } from '../lib/format.ts';
 import { invalidateRecordData, useAiPanel, useApps, useAuth, useObjects, usePermissions } from '../lib/hooks.ts';
 
-const greeting = () => {
+const greeting = (name: string) => {
   const h = new Date().getHours();
-  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  return t(h < 12 ? 'home.greeting.morning' : h < 18 ? 'home.greeting.afternoon' : 'home.greeting.evening', { name });
 };
 
 function CardTitle({ icon: IconCmp, children }: { icon: typeof Inbox; children: string }) {
@@ -46,7 +47,7 @@ function MyTasks() {
   const complete = useMutation({
     mutationFn: (id: string) => api.patch(`/api/records/activity/${id}`, { fields: { status: 'Completed' } }),
     onSuccess: () => {
-      toast.success('Task completed');
+      toast.success(t('home.tasks.completed'));
       return invalidateRecordData(qc);
     },
     onError: (err) => toast.error(errorMessage(err)),
@@ -55,11 +56,11 @@ function MyTasks() {
   const total = q.data?.total ?? 0;
   return (
     <Card
-      title={<CardTitle icon={CalendarClock}>My open tasks</CardTitle>}
+      title={<CardTitle icon={CalendarClock}>{t('home.tasks.title')}</CardTitle>}
       actions={
         total > 0 && (
           <Link to="/o/activity" className="text-xs font-medium text-indigo-600 hover:underline">
-            All activities
+            {t('home.tasks.allActivities')}
           </Link>
         )
       }
@@ -70,9 +71,9 @@ function MyTasks() {
       ) : q.error ? (
         <ErrorBanner error={q.error} className="m-4" />
       ) : !q.data?.records.length ? (
-        <p className="px-4 py-8 text-center text-sm text-slate-400">Nothing open — you’re all caught up.</p>
+        <p className="px-4 py-8 text-center text-sm text-slate-400">{t('home.tasks.empty')}</p>
       ) : (
-        <ul className="divide-y divide-slate-100" aria-label="My open tasks">
+        <ul className="divide-y divide-slate-100" aria-label={t('home.tasks.title')}>
           {q.data.records.map((r) => {
             const due = typeof r.fields.due_date === 'string' ? r.fields.due_date : null;
             const related = typeof r.fields.related_to === 'string' ? r.fields.related_to : null;
@@ -83,8 +84,8 @@ function MyTasks() {
                   type="button"
                   disabled={!canEdit('activity', r.ownerId) || complete.isPending}
                   onClick={() => complete.mutate(r.id)}
-                  aria-label={`Mark “${r.name}” complete`}
-                  title="Mark complete"
+                  aria-label={t('home.tasks.markNamedComplete', { name: r.name })}
+                  title={t('home.tasks.markComplete')}
                   className="group mt-0.5 shrink-0 text-slate-300 hover:text-emerald-600 disabled:cursor-not-allowed"
                 >
                   <Circle className="size-4 group-hover:hidden" aria-hidden />
@@ -108,16 +109,15 @@ function MyTasks() {
                 </div>
                 {due ? (
                   <span className={cx('shrink-0 text-xs tabular-nums', overdue ? 'font-medium text-rose-600' : due === today ? 'font-medium text-amber-600' : 'text-slate-500')}>
-                    {overdue ? 'Overdue · ' : due === today ? 'Today · ' : ''}
-                    {formatDate(due)}
+                    {overdue ? t('home.tasks.overdue', { date: formatDate(due) }) : due === today ? t('home.tasks.dueToday', { date: formatDate(due) }) : formatDate(due)}
                   </span>
                 ) : (
-                  <span className="shrink-0 text-xs text-slate-300">No date</span>
+                  <span className="shrink-0 text-xs text-slate-300">{t('home.tasks.noDate')}</span>
                 )}
               </li>
             );
           })}
-          {total > q.data.records.length && <li className="px-4 py-2 text-xs text-slate-400">+{plural(total - q.data.records.length, 'more open task')}</li>}
+          {total > q.data.records.length && <li className="px-4 py-2 text-xs text-slate-400">{t('home.tasks.more', { count: total - q.data.records.length })}</li>}
         </ul>
       )}
     </Card>
@@ -129,10 +129,10 @@ function MyApprovals() {
   const items = q.data ?? [];
   return (
     <Card
-      title={<CardTitle icon={Inbox}>Awaiting my approval</CardTitle>}
+      title={<CardTitle icon={Inbox}>{t('home.approvals.title')}</CardTitle>}
       actions={
         <Link to="/approvals" className="text-xs font-medium text-indigo-600 hover:underline">
-          Inbox
+          {t('home.approvals.inbox')}
         </Link>
       }
       bodyClassName="p-0"
@@ -142,7 +142,7 @@ function MyApprovals() {
       ) : q.error ? (
         <ErrorBanner error={q.error} className="m-4" />
       ) : !items.length ? (
-        <p className="px-4 py-6 text-center text-sm text-slate-400">No requests waiting for you.</p>
+        <p className="px-4 py-6 text-center text-sm text-slate-400">{t('home.approvals.empty')}</p>
       ) : (
         <ul className="divide-y divide-slate-100">
           {items.slice(0, 5).map((a) => (
@@ -151,14 +151,14 @@ function MyApprovals() {
                 {a.recordName}
               </Link>
               <p className="truncate text-xs text-slate-500">
-                {a.processName} · from {a.submittedByName} · {relativeTime(a.createdAt)}
+                {t('home.approvals.details', { process: a.processName, user: a.submittedByName, time: relativeTime(a.createdAt) })}
               </p>
             </li>
           ))}
           {items.length > 5 && (
             <li className="px-4 py-2 text-xs">
               <Link to="/approvals" className="text-indigo-600 hover:underline">
-                View all {items.length}
+                {t('home.approvals.viewAll', { count: items.length })}
               </Link>
             </li>
           )}
@@ -169,15 +169,21 @@ function MyApprovals() {
 }
 
 const RUN_COLOR: Record<AgentRun['status'], string> = { running: 'blue', completed: 'green', failed: 'red' };
+const RUN_TRIGGERS: Record<Exclude<AgentRun['trigger'], 'chat'>, MessageKey> = {
+  automation: 'home.runs.trigger.automation',
+  record_action: 'home.runs.trigger.recordAction',
+  api: 'home.runs.trigger.api',
+};
+const triggerLabel = (trigger: Exclude<AgentRun['trigger'], 'chat'>) => (Object.hasOwn(RUN_TRIGGERS, trigger) ? t(RUN_TRIGGERS[trigger]) : trigger);
 
 function RecentRuns() {
   const q = useQuery({ queryKey: ['agent-runs', 'recent'], queryFn: () => api.get<AgentRun[]>('/api/agent-runs?limit=5') });
   return (
     <Card
-      title={<CardTitle icon={Bot}>Recent AI activity</CardTitle>}
+      title={<CardTitle icon={Bot}>{t('home.runs.title')}</CardTitle>}
       actions={
         <Link to="/agents" className="text-xs font-medium text-indigo-600 hover:underline">
-          Agents
+          {t('home.runs.agents')}
         </Link>
       }
       bodyClassName="p-0"
@@ -187,7 +193,7 @@ function RecentRuns() {
       ) : q.error ? (
         <ErrorBanner error={q.error} className="m-4" />
       ) : !q.data?.length ? (
-        <p className="px-4 py-6 text-center text-sm text-slate-400">No agent runs yet. Ask an agent something to get started.</p>
+        <p className="px-4 py-6 text-center text-sm text-slate-400">{t('home.runs.empty')}</p>
       ) : (
         <ul className="divide-y divide-slate-100">
           {q.data.map((r) => {
@@ -198,10 +204,10 @@ function RecentRuns() {
                   <Link to={to} className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800 hover:text-indigo-700 hover:underline">
                     {r.agentName}
                   </Link>
-                  <Badge color={RUN_COLOR[r.status]}>{r.status}</Badge>
+                  <Badge color={RUN_COLOR[r.status]}>{t(`home.runs.status.${r.status}`)}</Badge>
                 </div>
                 <p className="truncate text-xs text-slate-500" title={r.input}>
-                  {r.trigger === 'chat' ? '' : `${r.trigger} · `}
+                  {r.trigger === 'chat' ? '' : `${triggerLabel(r.trigger)} · `}
                   {r.input || '—'}
                 </p>
                 <p className="text-[11px] text-slate-400">{relativeTime(r.createdAt)}</p>
@@ -227,7 +233,7 @@ function HomeDashboard({ dashboardId }: { dashboardId: string }) {
           {q.data.dashboard.name}
         </h2>
         <Link to={`/dashboards/${dashboardId}`} className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline">
-          Open dashboard <ArrowRight className="size-3" aria-hidden />
+          {t('home.dashboard.open')} <ArrowRight className="size-3" aria-hidden />
         </Link>
       </div>
       <DashboardGrid widgets={q.data.widgets} />
@@ -245,7 +251,7 @@ function QuickLinks({ app }: { app: AppDef }) {
   });
   if (!items.length) return null;
   return (
-    <nav aria-label="Quick links" className="grid grid-cols-2 gap-2 @lg:grid-cols-3 @5xl:grid-cols-6">
+    <nav aria-label={t('home.quickLinks')} className="grid grid-cols-2 gap-2 @lg:grid-cols-3 @5xl:grid-cols-6">
       {items.map(({ def, label, view }) => (
         <Link
           key={def.apiName}
@@ -269,8 +275,16 @@ export default function AppHome() {
   const app = apps.data?.find((a) => a.id === appId);
   if (!app) {
     return (
-      <EmptyState icon={LayoutDashboard} title="App not found" action={<Link to="/" className="text-sm font-medium text-indigo-600 hover:underline">Go to your home page</Link>}>
-        {apps.error ? errorMessage(apps.error) : 'This app does not exist or was removed.'}
+      <EmptyState
+        icon={LayoutDashboard}
+        title={t('home.appNotFound.title')}
+        action={
+          <Link to="/" className="text-sm font-medium text-indigo-600 hover:underline">
+            {t('home.appNotFound.goHome')}
+          </Link>
+        }
+      >
+        {apps.error ? errorMessage(apps.error) : t('home.appNotFound.message')}
       </EmptyState>
     );
   }
@@ -281,7 +295,7 @@ export default function AppHome() {
           <ObjectTile icon={app.icon} color={app.color} size="lg" />
           <div className="min-w-0">
             <h1 className="truncate text-xl font-semibold text-slate-900">
-              {greeting()}, {user.name.split(' ')[0]}
+              {greeting(user.name.split(' ')[0])}
             </h1>
             <p className="truncate text-sm text-slate-500">
               {app.name}
@@ -290,7 +304,7 @@ export default function AppHome() {
           </div>
         </div>
         <Button variant="ai" icon={Sparkles} onClick={() => ai.open()}>
-          Ask AI
+          {t('home.askAi')}
         </Button>
       </div>
       <QuickLinks app={app} />
@@ -300,17 +314,17 @@ export default function AppHome() {
           {app.dashboardId ? (
             <HomeDashboard dashboardId={app.dashboardId} />
           ) : (
-            <Card title={<CardTitle icon={LayoutDashboard}>Dashboard</CardTitle>}>
+            <Card title={<CardTitle icon={LayoutDashboard}>{t('home.dashboard.title')}</CardTitle>}>
               <p className="text-sm text-slate-500">
-                No dashboard is assigned to this app.{' '}
+                {t('home.dashboard.noneAssigned')}{' '}
                 <Link to="/dashboards" className="text-indigo-600 hover:underline">
-                  Browse dashboards
+                  {t('home.dashboard.browse')}
                 </Link>
               </p>
             </Card>
           )}
         </div>
-        <aside className="@container min-w-0" aria-label="My work">
+        <aside className="@container min-w-0" aria-label={t('home.myWork')}>
           <div className="grid gap-5 @lg:grid-cols-2 @2xl:grid-cols-3">
             <MyTasks />
             <MyApprovals />

@@ -16,51 +16,23 @@ import {
 } from '@titoforce/shared';
 import { ArrowDown, ArrowUp, Check, ChevronLeft, ExternalLink, Lock, Pencil, Plus, ShieldAlert, ShieldCheck, Trash, X } from 'lucide-react';
 import { type ReactNode, useId, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api, errorMessage } from '../../api.ts';
 import { useConfirm, useToast } from '../../components/feedback.tsx';
 import { completeFilter, FilterEditor } from '../../components/FilterEditor.tsx';
 import { ColorPicker, IconPicker, InlineToggle } from '../../components/pickers.tsx';
 import { Badge, Button, EmptyState, ErrorBanner, FormField, IconButton, Loading, Modal, PageHeader, Tabs, Toggle } from '../../components/ui.tsx';
+import { inSentence, t, tryT, tx } from '../../i18n/index.ts';
 import { fieldDef } from '../../lib/format.ts';
-import { invalidateMetadata, useObjectDef, useObjects } from '../../lib/hooks.ts';
+import { invalidateMetadata, useSetupObjectDef, useSetupObjects } from '../../lib/hooks.ts';
+import { PageLayoutsTab } from './PageLayouts.tsx';
 
-const TYPE_LABELS: Record<FieldType, string> = {
-  text: 'Text',
-  longtext: 'Long text',
-  email: 'Email',
-  phone: 'Phone',
-  url: 'URL',
-  number: 'Number',
-  currency: 'Currency',
-  percent: 'Percent',
-  date: 'Date',
-  datetime: 'Date & time',
-  checkbox: 'Checkbox',
-  picklist: 'Picklist',
-  multipicklist: 'Multi-select picklist',
-  lookup: 'Lookup (relationship)',
-  user: 'User',
-  formula: 'Formula',
-  rollup: 'Roll-up summary',
-};
+/** Display name of a field type. */
+const typeLabel = (type: FieldType) => t(`setupObjects.fieldTypes.${type}`);
 
-const FORMULA_TYPES: { id: FormulaResultType; label: string }[] = [
-  { id: 'number', label: 'Number' },
-  { id: 'currency', label: 'Currency' },
-  { id: 'percent', label: 'Percent' },
-  { id: 'text', label: 'Text' },
-  { id: 'date', label: 'Date' },
-  { id: 'checkbox', label: 'Checkbox' },
-];
+const FORMULA_TYPES: FormulaResultType[] = ['number', 'currency', 'percent', 'text', 'date', 'checkbox'];
 
-const ROLLUP_FNS: { id: RollupFunction; label: string }[] = [
-  { id: 'count', label: 'Count of records' },
-  { id: 'sum', label: 'Sum' },
-  { id: 'avg', label: 'Average' },
-  { id: 'min', label: 'Minimum' },
-  { id: 'max', label: 'Maximum' },
-];
+const ROLLUP_FNS: RollupFunction[] = ['count', 'sum', 'avg', 'min', 'max'];
 
 const NUMERIC_TYPES = new Set<string>(['number', 'currency', 'percent']);
 const RESERVED = new Set(['id', 'owner_id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'fields', 'object', 'data', 'refs']);
@@ -75,22 +47,26 @@ const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringif
 
 /** Replaces an object in the cached object list with the server's latest version. */
 function cacheObject(qc: QueryClient, def: ObjectDef) {
-  qc.setQueryData<ObjectDef[]>(['objects'], (old) => old?.map((o) => (o.apiName === def.apiName ? def : o)));
+  qc.setQueryData<ObjectDef[]>(['objects', 'raw'], (old) => old?.map((o) => (o.apiName === def.apiName ? def : o)));
 }
 
 function typeSummary(f: FieldDef, objects: ObjectDef[]): string {
   switch (f.type) {
     case 'lookup':
-      return `Lookup → ${f.referenceTo === '*' ? 'Any object' : (objects.find((o) => o.apiName === f.referenceTo)?.label ?? f.referenceTo ?? '?')}`;
-    case 'formula':
-      return `Formula (${FORMULA_TYPES.find((t) => t.id === f.formulaType)?.label.toLowerCase() ?? f.formulaType})`;
-    case 'rollup':
-      return `Roll-up (${f.rollup?.fn ?? '?'})`;
+      return t('setupObjects.typeSummary.lookup', { object: f.referenceTo === '*' ? t('setupObjects.typeSummary.anyObject') : (objects.find((o) => o.apiName === f.referenceTo)?.label ?? f.referenceTo ?? '?') });
+    case 'formula': {
+      const resultType = FORMULA_TYPES.find((ft) => ft === f.formulaType);
+      return t('setupObjects.typeSummary.formula', { type: resultType ? inSentence(typeLabel(resultType)) : String(f.formulaType) });
+    }
+    case 'rollup': {
+      const fn = f.rollup?.fn;
+      return t('setupObjects.typeSummary.rollup', { fn: fn ? (tryT(`setupObjects.typeSummary.rollupFns.${fn}`) ?? fn) : '?' });
+    }
     case 'picklist':
     case 'multipicklist':
-      return `${TYPE_LABELS[f.type]} · ${f.options?.length ?? 0}`;
+      return `${typeLabel(f.type)} · ${f.options?.length ?? 0}`;
     default:
-      return TYPE_LABELS[f.type] ?? f.type;
+      return tryT(`setupObjects.fieldTypes.${f.type}`) ?? f.type;
   }
 }
 
@@ -101,8 +77,8 @@ function typeSummary(f: FieldDef, objects: ObjectDef[]): string {
 function MoveButtons({ index, count, label, onMove }: { index: number; count: number; label: string; onMove: (from: number, to: number) => void }) {
   return (
     <>
-      <IconButton icon={ArrowUp} label={`Move ${label} up`} className="size-7 disabled:opacity-30" disabled={index === 0} onClick={() => onMove(index, index - 1)} />
-      <IconButton icon={ArrowDown} label={`Move ${label} down`} className="size-7 disabled:opacity-30" disabled={index === count - 1} onClick={() => onMove(index, index + 1)} />
+      <IconButton icon={ArrowUp} label={t('setupObjects.orderedList.moveUp', { label })} className="size-7 disabled:opacity-30" disabled={index === 0} onClick={() => onMove(index, index - 1)} />
+      <IconButton icon={ArrowDown} label={t('setupObjects.orderedList.moveDown', { label })} className="size-7 disabled:opacity-30" disabled={index === count - 1} onClick={() => onMove(index, index + 1)} />
     </>
   );
 }
@@ -128,13 +104,13 @@ function OrderedFieldList({ id, options, value, onChange, max }: { id: string; o
               <span className="w-4 text-xs text-slate-400 tabular-nums">{i + 1}</span>
               <span className="min-w-0 flex-1 truncate text-slate-800">{labelOf(v)}</span>
               <MoveButtons index={i} count={value.length} label={labelOf(v)} onMove={(a, b) => onChange(moveItem(value, a, b))} />
-              <IconButton icon={X} label={`Remove ${labelOf(v)}`} className="size-7" onClick={() => onChange(value.filter((x) => x !== v))} />
+              <IconButton icon={X} label={t('setupObjects.orderedList.remove', { label: labelOf(v) })} className="size-7" onClick={() => onChange(value.filter((x) => x !== v))} />
             </li>
           ))}
         </ol>
       )}
       <select id={id} className="input" value="" disabled={value.length >= max || !available.length} onChange={(e) => e.target.value && onChange([...value, e.target.value])}>
-        <option value="">{value.length >= max ? `Maximum of ${max} reached` : available.length ? 'Add a field…' : 'No more fields'}</option>
+        <option value="">{value.length >= max ? t('setupObjects.orderedList.maxReached', { max }) : available.length ? t('setupObjects.orderedList.addField') : t('setupObjects.orderedList.noMoreFields')}</option>
         {available.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
@@ -148,18 +124,28 @@ function OrderedFieldList({ id, options, value, onChange, max }: { id: string; o
 function FormulaHelp({ examples }: { examples: string[] }) {
   return (
     <details className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-600">
-      <summary className="cursor-pointer font-medium text-slate-700">Formula syntax</summary>
+      <summary className="cursor-pointer font-medium text-slate-700">{t('setupObjects.formulaHelp.title')}</summary>
       <div className="mt-2 space-y-1.5">
         <p>
-          Reference fields by API name (e.g. <code>amount</code>) plus <code>name</code>, <code>owner_id</code>, <code>created_at</code>, <code>updated_at</code>. Text goes in single quotes.
+          {tx('setupObjects.formulaHelp.fields', {
+            example: <code>amount</code>,
+            name: <code>name</code>,
+            ownerId: <code>owner_id</code>,
+            createdAt: <code>created_at</code>,
+            updatedAt: <code>updated_at</code>,
+          })}
         </p>
         <p>
-          Operators: <code>+ - * / %</code>, <code>&amp;</code> (join text), <code>== != &lt; &lt;= &gt; &gt;=</code>, <code>&amp;&amp; || !</code>, <code>condition ? a : b</code>.
+          {tx('setupObjects.formulaHelp.operators', {
+            arithmetic: <code>+ - * / %</code>,
+            concat: <code>&amp;</code>,
+            comparison: <code>== != &lt; &lt;= &gt; &gt;=</code>,
+            logical: <code>&amp;&amp; || !</code>,
+            conditional: <code>condition ? a : b</code>,
+          })}
         </p>
-        <p>
-          Functions: <span className="font-mono">{EXPRESSION_FUNCTIONS.join(', ')}</span>.
-        </p>
-        <p>Examples:</p>
+        <p>{tx('setupObjects.formulaHelp.functions', { functions: <span className="font-mono">{EXPRESSION_FUNCTIONS.join(', ')}</span> })}</p>
+        <p>{t('setupObjects.formulaHelp.examples')}</p>
         <ul className="list-disc space-y-0.5 pl-5 font-mono">
           {examples.map((x) => (
             <li key={x}>{x}</li>
@@ -194,28 +180,28 @@ function OptionsEditor({ rows, onChange, isNew }: { rows: OptionRow[]; onChange:
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between">
-        <span className="label">Values</span>
-        {!isNew && <span className="text-xs text-slate-400">Renaming a value doesn’t change existing records.</span>}
+        <span className="label">{t('setupObjects.fieldForm.options.values')}</span>
+        {!isNew && <span className="text-xs text-slate-400">{t('setupObjects.fieldForm.options.renameHint')}</span>}
       </div>
       {rows.map((o, i) => (
         <div key={o.key} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2 sm:flex-nowrap">
           <input
-            aria-label={`Value ${i + 1}`}
+            aria-label={t('setupObjects.fieldForm.options.value', { n: i + 1 })}
             className="input min-w-40 flex-1"
             value={o.value}
             maxLength={100}
-            placeholder={`Value ${i + 1}`}
+            placeholder={t('setupObjects.fieldForm.options.value', { n: i + 1 })}
             onChange={(e) => onChange(rows.map((r) => (r.key === o.key ? { ...r, value: e.target.value } : r)))}
           />
-          <ColorPicker size="sm" label={`Color of value ${i + 1}`} value={o.color} onChange={(c) => onChange(rows.map((r) => (r.key === o.key ? { ...r, color: c } : r)))} />
+          <ColorPicker size="sm" label={t('setupObjects.fieldForm.options.color', { n: i + 1 })} value={o.color} onChange={(c) => onChange(rows.map((r) => (r.key === o.key ? { ...r, color: c } : r)))} />
           <div className="flex items-center">
-            <MoveButtons index={i} count={rows.length} label={`value ${i + 1}`} onMove={(a, b) => onChange(moveItem(rows, a, b))} />
-            <IconButton icon={X} label={`Remove value ${i + 1}`} className="size-7" onClick={() => onChange(rows.filter((r) => r.key !== o.key))} />
+            <MoveButtons index={i} count={rows.length} label={t('setupObjects.fieldForm.options.valueInSentence', { n: i + 1 })} onMove={(a, b) => onChange(moveItem(rows, a, b))} />
+            <IconButton icon={X} label={t('setupObjects.fieldForm.options.remove', { n: i + 1 })} className="size-7" onClick={() => onChange(rows.filter((r) => r.key !== o.key))} />
           </div>
         </div>
       ))}
       <Button size="sm" variant="ghost" icon={Plus} onClick={() => onChange([...rows, { key: seq.current++, value: '' }])}>
-        Add value
+        {t('setupObjects.fieldForm.options.add')}
       </Button>
     </div>
   );
@@ -278,30 +264,30 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
     !isNew || !effectiveApi
       ? null
       : !API_NAME_RE.test(effectiveApi)
-        ? 'Use lowercase letters, numbers and underscores, starting with a letter (max 40).'
+        ? t('setupObjects.apiNameInvalid')
         : RESERVED.has(effectiveApi) || (effectiveApi === 'name' && (type !== 'text' || !!def.nameTemplate || def.nameField !== 'name'))
-          ? `“${effectiveApi}” is reserved.`
+          ? t('setupObjects.fieldForm.reserved', { apiName: effectiveApi })
           : def.fields.some((f) => f.apiName === effectiveApi)
-            ? 'A field with this API name already exists.'
+            ? t('setupObjects.fieldForm.alreadyExists')
             : null;
 
   const computed = type === 'formula' || type === 'rollup';
   const picklist = type === 'picklist' || type === 'multipicklist';
 
   const problem = (() => {
-    if (!label.trim()) return 'Enter a label.';
-    if (isNew && (!effectiveApi || apiError)) return 'Fix the API name.';
+    if (!label.trim()) return t('setupObjects.fieldForm.problems.label');
+    if (isNew && (!effectiveApi || apiError)) return t('setupObjects.fieldForm.problems.apiName');
     if (picklist) {
-      if (!options.length) return 'Add at least one picklist value.';
-      if (options.some((o) => !o.value.trim())) return 'Picklist values cannot be empty.';
+      if (!options.length) return t('setupObjects.fieldForm.problems.noOptions');
+      if (options.some((o) => !o.value.trim())) return t('setupObjects.fieldForm.problems.emptyOption');
       const seen = new Set(options.map((o) => o.value.trim().toLowerCase()));
-      if (seen.size !== options.length) return 'Picklist values must be unique.';
+      if (seen.size !== options.length) return t('setupObjects.fieldForm.problems.duplicateOption');
     }
-    if (type === 'lookup' && !referenceTo) return 'Choose the object this lookup points to.';
-    if (type === 'formula' && !formula.trim()) return 'Enter a formula.';
+    if (type === 'lookup' && !referenceTo) return t('setupObjects.fieldForm.problems.lookupTarget');
+    if (type === 'formula' && !formula.trim()) return t('setupObjects.fieldForm.problems.formula');
     if (type === 'rollup') {
-      if (!rollup.childObject || !rollup.relationshipField) return 'Choose the child object and relationship.';
-      if (rollup.fn !== 'count' && !rollup.field) return 'Choose the field to aggregate.';
+      if (!rollup.childObject || !rollup.relationshipField) return t('setupObjects.fieldForm.problems.rollupSource');
+      if (rollup.fn !== 'count' && !rollup.field) return t('setupObjects.fieldForm.problems.rollupField');
     }
     return null;
   })();
@@ -356,7 +342,7 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
     onSuccess: async (next) => {
       if (next) {
         cacheObject(qc, next);
-        toast.success(isNew ? `${label.trim()} field created` : `${label.trim()} saved`);
+        toast.success(isNew ? t('setupObjects.fieldForm.created', { label: label.trim() }) : t('setupObjects.fieldForm.saved', { label: label.trim() }));
       }
       onClose();
       await invalidateMetadata(qc);
@@ -391,16 +377,16 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
     if (type === 'checkbox') {
       defaultInput = (
         <select id={ids.def} className="input" value={defaultValue} onChange={(e) => setDefaultValue(e.target.value)}>
-          <option value="">No default</option>
-          <option value="true">Checked</option>
-          <option value="false">Unchecked</option>
+          <option value="">{t('setupObjects.fieldForm.noDefault')}</option>
+          <option value="true">{t('setupObjects.fieldForm.checked')}</option>
+          <option value="false">{t('setupObjects.fieldForm.unchecked')}</option>
         </select>
       );
     } else if (type === 'picklist') {
       const values = options.map((o) => o.value.trim()).filter(Boolean);
       defaultInput = (
         <select id={ids.def} className="input" value={defaultValue} onChange={(e) => setDefaultValue(e.target.value)}>
-          <option value="">No default</option>
+          <option value="">{t('setupObjects.fieldForm.noDefault')}</option>
           {defaultValue && !values.includes(defaultValue) && <option value={defaultValue}>{defaultValue}</option>}
           {values.map((v) => (
             <option key={v} value={v}>
@@ -426,14 +412,14 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
     <Modal
       open
       onClose={onClose}
-      title={isNew ? `New field on ${def.label}` : `Edit ${field?.label}`}
+      title={isNew ? t('setupObjects.fieldForm.newTitle', { object: def.label }) : t('setupObjects.editItem', { name: field?.label ?? '' })}
       size="lg"
       footer={
         <>
           {problem && <span className="mr-auto text-xs text-slate-500">{problem}</span>}
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" type="submit" form={formId} disabled={!!problem} loading={save.isPending}>
-            {isNew ? 'Create field' : 'Save field'}
+            {isNew ? t('setupObjects.fieldForm.create') : t('setupObjects.fieldForm.save')}
           </Button>
         </>
       }
@@ -448,11 +434,11 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
       >
         <ErrorBanner error={save.error} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField label="Field label" required htmlFor={ids.label}>
+          <FormField label={t('setupObjects.fieldForm.fieldLabel')} required htmlFor={ids.label}>
             <input id={ids.label} className="input" value={label} maxLength={80} onChange={(e) => setLabel(e.target.value)} />
           </FormField>
           {isNew ? (
-            <FormField label="API name" required htmlFor={ids.api} error={apiError} help="Cannot be changed later.">
+            <FormField label={t('common.apiName')} required htmlFor={ids.api} error={apiError} help={t('setupObjects.fieldForm.apiNameHelp')}>
               <input
                 id={ids.api}
                 className="input font-mono"
@@ -465,29 +451,29 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
               />
             </FormField>
           ) : (
-            <FormField label="API name">
+            <FormField label={t('common.apiName')}>
               <div className="input bg-slate-50 font-mono text-slate-600">{field?.apiName}</div>
             </FormField>
           )}
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           {isNew ? (
-            <FormField label="Type" required htmlFor={ids.type}>
+            <FormField label={t('common.type')} required htmlFor={ids.type}>
               <select id={ids.type} className="input" value={type} onChange={(e) => changeType(e.target.value as FieldType)}>
-                {FIELD_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {TYPE_LABELS[t]}
+                {FIELD_TYPES.map((ft) => (
+                  <option key={ft} value={ft}>
+                    {typeLabel(ft)}
                   </option>
                 ))}
               </select>
             </FormField>
           ) : (
-            <FormField label="Type" help="The type of an existing field can’t be changed.">
+            <FormField label={t('common.type')} help={t('setupObjects.fieldForm.typeHelp')}>
               <div className="input bg-slate-50 text-slate-600">{typeSummary(field!, objects)}</div>
             </FormField>
           )}
-          <FormField label="Section" htmlFor={ids.section} help="Groups fields on the record page.">
-            <input id={ids.section} className="input" list={ids.sections} value={section} maxLength={60} placeholder="Details" onChange={(e) => setSection(e.target.value)} />
+          <FormField label={t('setupObjects.section')} htmlFor={ids.section} help={t('setupObjects.fieldForm.sectionHelp')}>
+            <input id={ids.section} className="input" list={ids.sections} value={section} maxLength={60} placeholder={t('common.details')} onChange={(e) => setSection(e.target.value)} />
             <datalist id={ids.sections}>
               {sections.map((s) => (
                 <option key={s} value={s} />
@@ -500,10 +486,10 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
 
         {type === 'lookup' && (
           <div className="grid gap-4 sm:grid-cols-2">
-            <FormField label="Related object" required htmlFor={ids.ref} help={isNew ? 'Records of this object can be linked.' : 'The target object can’t be changed.'}>
+            <FormField label={t('setupObjects.fieldForm.lookup.relatedObject')} required htmlFor={ids.ref} help={isNew ? t('setupObjects.fieldForm.lookup.newHelp') : t('setupObjects.fieldForm.lookup.editHelp')}>
               <select id={ids.ref} className="input" value={referenceTo} disabled={!isNew} onChange={(e) => setReferenceTo(e.target.value)}>
-                <option value="">Choose an object…</option>
-                <option value="*">Any object (*)</option>
+                <option value="">{t('setupObjects.fieldForm.lookup.chooseObject')}</option>
+                <option value="*">{t('setupObjects.fieldForm.lookup.anyObject')}</option>
                 {[...objects]
                   .sort((a, b) => a.label.localeCompare(b.label))
                   .map((o) => (
@@ -514,8 +500,8 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
               </select>
             </FormField>
             <div className="pt-6">
-              <Toggle checked={cascadeDelete} onChange={setCascadeDelete} label="Delete with the related record" />
-              <p className="mt-1 text-xs text-slate-400">Master-detail: deleting the referenced record also deletes this one.</p>
+              <Toggle checked={cascadeDelete} onChange={setCascadeDelete} label={t('setupObjects.fieldForm.lookup.cascadeDelete')} />
+              <p className="mt-1 text-xs text-slate-400">{t('setupObjects.fieldForm.lookup.cascadeHelp')}</p>
             </div>
           </div>
         )}
@@ -523,18 +509,18 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
         {type === 'formula' && (
           <div className="space-y-3">
             <div className="grid gap-4 sm:grid-cols-2">
-              <FormField label="Result type" required htmlFor={ids.formulaType}>
+              <FormField label={t('setupObjects.fieldForm.formula.resultType')} required htmlFor={ids.formulaType}>
                 <select id={ids.formulaType} className="input" value={formulaType} onChange={(e) => setFormulaType(e.target.value as FormulaResultType)}>
-                  {FORMULA_TYPES.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.label}
+                  {FORMULA_TYPES.map((ft) => (
+                    <option key={ft} value={ft}>
+                      {typeLabel(ft)}
                     </option>
                   ))}
                 </select>
               </FormField>
-              <FormField label="Insert field" htmlFor={ids.insert}>
+              <FormField label={t('setupObjects.fieldForm.formula.insertField')} htmlFor={ids.insert}>
                 <select id={ids.insert} className="input" value="" onChange={(e) => e.target.value && insertIntoFormula(e.target.value)}>
-                  <option value="">Choose a field to insert…</option>
+                  <option value="">{t('setupObjects.fieldForm.formula.chooseField')}</option>
                   {formulaFields.map((f) => (
                     <option key={f.value} value={f.value}>
                       {f.label} ({f.value})
@@ -543,7 +529,7 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
                 </select>
               </FormField>
             </div>
-            <FormField label="Formula" required htmlFor={ids.formula} help="Recalculated automatically whenever a record is saved.">
+            <FormField label={t('setupObjects.fieldForm.formula.formula')} required htmlFor={ids.formula} help={t('setupObjects.fieldForm.formula.help')}>
               <textarea ref={formulaRef} id={ids.formula} className="input font-mono text-xs" rows={4} spellCheck={false} value={formula} maxLength={4000} placeholder="amount * probability / 100" onChange={(e) => setFormula(e.target.value)} />
             </FormField>
             <FormulaHelp examples={['amount * probability / 100', "IF(priority == 'Urgent', 4, 24)", "CASE(stage, 'Closed Won', 100, 'Closed Lost', 0, 50)", 'DAYS_BETWEEN(created_at, TODAY())', "first_name & ' ' & last_name"]} />
@@ -553,11 +539,11 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
         {type === 'rollup' && (
           <div className="space-y-3 rounded-lg border border-slate-200 p-3">
             {childObjects.length === 0 ? (
-              <p className="text-sm text-slate-500">No object has a lookup to {def.label} yet. Add a lookup field pointing to {def.label} on a child object first.</p>
+              <p className="text-sm text-slate-500">{t('setupObjects.fieldForm.rollup.noChildren', { object: def.label })}</p>
             ) : (
               <>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField label="Child object" required htmlFor={ids.child}>
+                  <FormField label={t('setupObjects.fieldForm.rollup.childObject')} required htmlFor={ids.child}>
                     <select
                       id={ids.child}
                       className="input"
@@ -567,7 +553,7 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
                         setRollup({ ...rollup, childObject: child, relationshipField: relFieldsOf(child)[0]?.apiName ?? '', field: numericFieldsOf(child)[0]?.apiName ?? '', filter: null });
                       }}
                     >
-                      {!childDef && <option value={rollup.childObject}>{rollup.childObject || 'Choose…'}</option>}
+                      {!childDef && <option value={rollup.childObject}>{rollup.childObject || t('common.choose')}</option>}
                       {childObjects.map((o) => (
                         <option key={o.apiName} value={o.apiName}>
                           {o.label}
@@ -575,9 +561,9 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
                       ))}
                     </select>
                   </FormField>
-                  <FormField label="Relationship field" required htmlFor={ids.rel} help={`Lookup on the child that points to ${def.label}.`}>
+                  <FormField label={t('setupObjects.fieldForm.rollup.relationshipField')} required htmlFor={ids.rel} help={t('setupObjects.fieldForm.rollup.relationshipHelp', { object: def.label })}>
                     <select id={ids.rel} className="input" value={rollup.relationshipField} onChange={(e) => setRollup({ ...rollup, relationshipField: e.target.value })}>
-                      {!relFieldsOf(rollup.childObject).some((f) => f.apiName === rollup.relationshipField) && <option value={rollup.relationshipField}>{rollup.relationshipField || 'Choose…'}</option>}
+                      {!relFieldsOf(rollup.childObject).some((f) => f.apiName === rollup.relationshipField) && <option value={rollup.relationshipField}>{rollup.relationshipField || t('common.choose')}</option>}
                       {relFieldsOf(rollup.childObject).map((f) => (
                         <option key={f.apiName} value={f.apiName}>
                           {f.label}
@@ -585,19 +571,19 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
                       ))}
                     </select>
                   </FormField>
-                  <FormField label="Function" required htmlFor={ids.fn}>
+                  <FormField label={t('setupObjects.fieldForm.rollup.fn')} required htmlFor={ids.fn}>
                     <select id={ids.fn} className="input" value={rollup.fn} onChange={(e) => setRollup({ ...rollup, fn: e.target.value as RollupFunction })}>
-                      {ROLLUP_FNS.map((f) => (
-                        <option key={f.id} value={f.id}>
-                          {f.label}
+                      {ROLLUP_FNS.map((fn) => (
+                        <option key={fn} value={fn}>
+                          {t(`setupObjects.rollupFns.${fn}`)}
                         </option>
                       ))}
                     </select>
                   </FormField>
                   {rollup.fn !== 'count' && (
-                    <FormField label="Field to aggregate" required htmlFor={ids.agg}>
+                    <FormField label={t('setupObjects.fieldForm.rollup.field')} required htmlFor={ids.agg}>
                       <select id={ids.agg} className="input" value={rollup.field} onChange={(e) => setRollup({ ...rollup, field: e.target.value })}>
-                        {!numericFieldsOf(rollup.childObject).some((f) => f.apiName === rollup.field) && <option value={rollup.field}>{rollup.field || 'Choose a numeric field…'}</option>}
+                        {!numericFieldsOf(rollup.childObject).some((f) => f.apiName === rollup.field) && <option value={rollup.field}>{rollup.field || t('setupObjects.fieldForm.rollup.chooseNumeric')}</option>}
                         {numericFieldsOf(rollup.childObject).map((f) => (
                           <option key={f.apiName} value={f.apiName}>
                             {f.label}
@@ -609,7 +595,7 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
                 </div>
                 {childDef && (
                   <div>
-                    <span className="label">Only include child records where (optional)</span>
+                    <span className="label">{t('setupObjects.fieldForm.rollup.filter')}</span>
                     <FilterEditor def={childDef} value={rollup.filter} onChange={(filter) => setRollup({ ...rollup, filter })} />
                   </div>
                 )}
@@ -619,28 +605,28 @@ function FieldForm({ def, field, objects, onClose }: { def: ObjectDef; field: Fi
         )}
 
         {hasPrecision(type, formulaType) && (
-          <FormField label="Decimal places" htmlFor={ids.precision} help={type === 'currency' ? 'Defaults to 2.' : 'Leave empty for the default.'}>
+          <FormField label={t('setupObjects.fieldForm.precision')} htmlFor={ids.precision} help={type === 'currency' ? t('setupObjects.fieldForm.precisionCurrencyHelp') : t('setupObjects.fieldForm.precisionHelp')}>
             <input id={ids.precision} type="number" min={0} max={8} step={1} className="input sm:w-40" value={precision} onChange={(e) => setPrecision(e.target.value)} />
           </FormField>
         )}
 
         {supportsDefault(type) && (
-          <FormField label="Default value" htmlFor={ids.def} help="Applied to new records. Templates work too, e.g. {{TODAY()}}, {{ADD_DAYS(TODAY(), 7)}} or {{user.id}} (the creating user).">
+          <FormField label={t('setupObjects.fieldForm.defaultValue')} htmlFor={ids.def} help={t('setupObjects.fieldForm.defaultValueHelp', { today: '{{TODAY()}}', addDays: '{{ADD_DAYS(TODAY(), 7)}}', userId: '{{user.id}}' })}>
             {defaultInput}
           </FormField>
         )}
 
-        <FormField label="Help text" htmlFor={ids.help} help="Shown as a hint next to the field.">
+        <FormField label={t('setupObjects.fieldForm.helpText')} htmlFor={ids.help} help={t('setupObjects.fieldForm.helpTextHelp')}>
           <input id={ids.help} className="input" value={helpText} maxLength={500} onChange={(e) => setHelpText(e.target.value)} />
         </FormField>
 
         <div className="flex flex-wrap gap-x-8 gap-y-3">
-          {!computed && <Toggle checked={required} onChange={setRequired} label="Required" />}
-          <Toggle checked={sensitive} onChange={setSensitive} label="Sensitive" />
+          {!computed && <Toggle checked={required} onChange={setRequired} label={t('common.required')} />}
+          <Toggle checked={sensitive} onChange={setSensitive} label={t('setupObjects.sensitive')} />
         </div>
         {sensitive && (
           <p className="-mt-2 flex items-center gap-1.5 text-xs text-amber-700">
-            <ShieldAlert className="size-3.5" aria-hidden /> Only roles with “View sensitive fields” can see or edit this field.
+            <ShieldAlert className="size-3.5" aria-hidden /> {t('setupObjects.fieldForm.sensitiveHint', { capability: t('setupRoles.capabilities.viewSensitive.label') })}
           </p>
         )}
       </form>
@@ -657,7 +643,7 @@ function FieldsTab({ def, objects }: { def: ObjectDef; objects: ObjectDef[] }) {
     mutationFn: (f: FieldDef) => api.del<ObjectDef>(`/api/objects/${def.apiName}/fields/${f.apiName}`),
     onSuccess: async (next, f) => {
       cacheObject(qc, next);
-      toast.success(`${f.label} deleted`);
+      toast.success(t('setupObjects.fields.deleted', { label: f.label }));
       await invalidateMetadata(qc);
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -666,9 +652,9 @@ function FieldsTab({ def, objects }: { def: ObjectDef; objects: ObjectDef[] }) {
 
   const onDelete = async (f: FieldDef) => {
     const ok = await confirm({
-      title: `Delete ${f.label}?`,
-      message: `The field and its data on every ${def.label.toLowerCase()} record are permanently deleted. It is also removed from layouts and list columns.`,
-      confirmLabel: 'Delete field',
+      title: t('setupObjects.fields.deleteTitle', { label: f.label }),
+      message: t('setupObjects.fields.deleteMessage', { object: inSentence(def.label) }),
+      confirmLabel: t('setupObjects.fields.deleteConfirm'),
       danger: true,
     });
     if (ok) del.mutate(f);
@@ -677,24 +663,24 @@ function FieldsTab({ def, objects }: { def: ObjectDef; objects: ObjectDef[] }) {
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-        <p className="text-sm text-slate-500">{def.fields.length} fields</p>
+        <p className="text-sm text-slate-500">{t('setupObjects.fields.count', { count: def.fields.length })}</p>
         <Button variant="primary" size="sm" icon={Plus} onClick={() => setEditing('new')}>
-          New field
+          {t('setupObjects.fields.newField')}
         </Button>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50/70 text-left text-xs font-semibold text-slate-500 uppercase">
             <tr>
-              <th className="px-4 py-2.5">Label</th>
-              <th className="px-4 py-2.5">API name</th>
-              <th className="px-4 py-2.5">Type</th>
-              <th className="px-4 py-2.5 text-center">Required</th>
-              <th className="px-4 py-2.5 text-center">Sensitive</th>
-              <th className="px-4 py-2.5">Section</th>
-              <th className="px-4 py-2.5">Origin</th>
+              <th className="px-4 py-2.5">{t('common.label')}</th>
+              <th className="px-4 py-2.5">{t('common.apiName')}</th>
+              <th className="px-4 py-2.5">{t('common.type')}</th>
+              <th className="px-4 py-2.5 text-center">{t('common.required')}</th>
+              <th className="px-4 py-2.5 text-center">{t('setupObjects.sensitive')}</th>
+              <th className="px-4 py-2.5">{t('setupObjects.section')}</th>
+              <th className="px-4 py-2.5">{t('setupObjects.fields.origin')}</th>
               <th className="px-4 py-2.5">
-                <span className="sr-only">Actions</span>
+                <span className="sr-only">{t('common.actions')}</span>
               </th>
             </tr>
           </thead>
@@ -705,23 +691,23 @@ function FieldsTab({ def, objects }: { def: ObjectDef; objects: ObjectDef[] }) {
                   {f.label}
                   {def.nameField === f.apiName && !def.nameTemplate && (
                     <Badge color="indigo" className="ml-2">
-                      Record name
+                      {t('setupObjects.recordName')}
                     </Badge>
                   )}
                 </td>
                 <td className="px-4 py-2.5 font-mono text-xs text-slate-600">{f.apiName}</td>
                 <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{typeSummary(f, objects)}</td>
-                <td className="px-4 py-2.5 text-center">{f.required ? <Check className="mx-auto size-4 text-emerald-600" aria-label="Required" /> : <span className="text-slate-300">—</span>}</td>
-                <td className="px-4 py-2.5 text-center">{f.sensitive ? <Lock className="mx-auto size-4 text-amber-600" aria-label="Sensitive" /> : <span className="text-slate-300">—</span>}</td>
+                <td className="px-4 py-2.5 text-center">{f.required ? <Check className="mx-auto size-4 text-emerald-600" aria-label={t('common.required')} /> : <span className="text-slate-300">—</span>}</td>
+                <td className="px-4 py-2.5 text-center">{f.sensitive ? <Lock className="mx-auto size-4 text-amber-600" aria-label={t('setupObjects.sensitive')} /> : <span className="text-slate-300">—</span>}</td>
                 <td className="px-4 py-2.5 text-slate-600">{f.section ?? ''}</td>
-                <td className="px-4 py-2.5">{f.isCustom ? <Badge color="purple">Custom</Badge> : <Badge color="gray">Standard</Badge>}</td>
+                <td className="px-4 py-2.5">{f.isCustom ? <Badge color="purple">{t('setupObjects.custom')}</Badge> : <Badge color="gray">{t('setupObjects.standard')}</Badge>}</td>
                 <td className="px-4 py-2.5">
                   <div className="flex justify-end gap-0.5">
-                    <IconButton icon={Pencil} label={`Edit ${f.label}`} onClick={() => setEditing(f)} />
+                    <IconButton icon={Pencil} label={t('setupObjects.editItem', { name: f.label })} onClick={() => setEditing(f)} />
                     {deletable(f) ? (
-                      <IconButton icon={Trash} label={`Delete ${f.label}`} className="hover:text-rose-600" disabled={del.isPending} onClick={() => void onDelete(f)} />
+                      <IconButton icon={Trash} label={t('setupObjects.deleteItem', { name: f.label })} className="hover:text-rose-600" disabled={del.isPending} onClick={() => void onDelete(f)} />
                     ) : (
-                      <span className="inline-flex size-8 items-center justify-center text-slate-300" title={f.isCustom ? 'The record name field can’t be deleted' : 'Standard fields can’t be deleted'}>
+                      <span className="inline-flex size-8 items-center justify-center text-slate-300" title={f.isCustom ? t('setupObjects.fields.nameFieldLocked') : t('setupObjects.fields.standardLocked')}>
                         <Lock className="size-3.5" aria-hidden />
                       </span>
                     )}
@@ -738,7 +724,7 @@ function FieldsTab({ def, objects }: { def: ObjectDef; objects: ObjectDef[] }) {
 }
 
 // ---------------------------------------------------------------------------
-// Layout & behavior tab
+// Details & behavior tab
 // ---------------------------------------------------------------------------
 
 function LayoutTab({ def }: { def: ObjectDef }) {
@@ -777,7 +763,7 @@ function LayoutTab({ def }: { def: ObjectDef }) {
 
   const textFields = def.fields.filter((f) => f.type === 'text' || f.apiName === def.nameField);
   const picklists = def.fields.filter((f) => f.type === 'picklist');
-  const dateFields = [...def.fields.filter(isDateField), { apiName: 'created_at', label: 'Created' }];
+  const dateFields = [...def.fields.filter(isDateField), { apiName: 'created_at', label: t('common.created') }];
   const layoutOptions = [
     ...def.fields.map((f) => ({ value: f.apiName, label: f.label })),
     ...LAYOUT_SYSTEM.filter((s) => !def.fields.some((f) => f.apiName === s)).map((s) => ({ value: s, label: fieldDef(def, s)?.label ?? s })),
@@ -805,13 +791,13 @@ function LayoutTab({ def }: { def: ObjectDef }) {
   if (!sameJson(dupFields, def.duplicateFields ?? [])) patch.duplicateFields = dupFields;
   const dirty = Object.keys(patch).length > 0;
 
-  const problem = !label.trim() || !plural.trim() ? 'Labels are required.' : nameMode === 'template' && !nameTemplate.trim() ? 'Enter a name template.' : !!tlStart !== !!tlEnd ? 'Choose both timeline fields or neither.' : null;
+  const problem = !label.trim() || !plural.trim() ? t('setupObjects.layout.problems.labels') : nameMode === 'template' && !nameTemplate.trim() ? t('setupObjects.layout.problems.nameTemplate') : !!tlStart !== !!tlEnd ? t('setupObjects.layout.problems.timeline') : null;
 
   const save = useMutation({
     mutationFn: () => api.patch<ObjectDef>(`/api/objects/${def.apiName}`, patch),
     onSuccess: async (next) => {
       cacheObject(qc, next);
-      toast.success('Layout & behavior saved');
+      toast.success(t('setupObjects.layout.saved'));
       await invalidateMetadata(qc);
     },
   });
@@ -838,40 +824,40 @@ function LayoutTab({ def }: { def: ObjectDef }) {
     >
       <ErrorBanner error={save.error} />
       <section className="card p-4">
-        <h2 className="mb-3 text-sm font-semibold text-slate-800">Details</h2>
+        <h2 className="mb-3 text-sm font-semibold text-slate-800">{t('common.details')}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField label="Label" required htmlFor={ids.label}>
+          <FormField label={t('common.label')} required htmlFor={ids.label}>
             <input id={ids.label} className="input" value={label} maxLength={60} onChange={(e) => setLabel(e.target.value)} />
           </FormField>
-          <FormField label="Plural label" required htmlFor={ids.plural}>
+          <FormField label={t('setupObjects.pluralLabel')} required htmlFor={ids.plural}>
             <input id={ids.plural} className="input" value={plural} maxLength={60} onChange={(e) => setPlural(e.target.value)} />
           </FormField>
-          <FormField label="Description" htmlFor={ids.desc} className="sm:col-span-2">
+          <FormField label={t('common.description')} htmlFor={ids.desc} className="sm:col-span-2">
             <textarea id={ids.desc} className="input" rows={2} maxLength={500} value={description} onChange={(e) => setDescription(e.target.value)} />
           </FormField>
-          <FormField label="Icon" htmlFor={ids.icon}>
+          <FormField label={t('common.icon')} htmlFor={ids.icon}>
             <IconPicker id={ids.icon} value={icon} onChange={setIcon} />
           </FormField>
           <div>
-            <span className="label">Color</span>
+            <span className="label">{t('common.color')}</span>
             <ColorPicker value={color} onChange={setColor} />
           </div>
         </div>
       </section>
 
       <section className="card p-4">
-        <h2 className="mb-1 text-sm font-semibold text-slate-800">Record name</h2>
-        <p className="mb-3 text-xs text-slate-500">How records are titled in lists, lookups and search.</p>
-        <div role="radiogroup" aria-label="Record name source" className="mb-3 flex flex-wrap gap-4 text-sm text-slate-700">
+        <h2 className="mb-1 text-sm font-semibold text-slate-800">{t('setupObjects.recordName')}</h2>
+        <p className="mb-3 text-xs text-slate-500">{t('setupObjects.layout.recordNameHelp')}</p>
+        <div role="radiogroup" aria-label={t('setupObjects.layout.recordNameSource')} className="mb-3 flex flex-wrap gap-4 text-sm text-slate-700">
           <label className="inline-flex items-center gap-2">
-            <input type="radio" name="nameMode" className="accent-indigo-600" checked={nameMode === 'field'} onChange={() => setNameMode('field')} /> Use a text field
+            <input type="radio" name="nameMode" className="accent-indigo-600" checked={nameMode === 'field'} onChange={() => setNameMode('field')} /> {t('setupObjects.layout.useField')}
           </label>
           <label className="inline-flex items-center gap-2">
-            <input type="radio" name="nameMode" className="accent-indigo-600" checked={nameMode === 'template'} onChange={() => setNameMode('template')} /> Build from a template
+            <input type="radio" name="nameMode" className="accent-indigo-600" checked={nameMode === 'template'} onChange={() => setNameMode('template')} /> {t('setupObjects.layout.useTemplate')}
           </label>
         </div>
         {nameMode === 'field' ? (
-          <FormField label="Name field" required htmlFor={ids.nameField} className="sm:w-1/2">
+          <FormField label={t('setupObjects.layout.nameField')} required htmlFor={ids.nameField} className="sm:w-1/2">
             <select id={ids.nameField} className="input" value={nameField} onChange={(e) => setNameField(e.target.value)}>
               {!textFields.some((f) => f.apiName === nameField) && <option value={nameField}>{nameField}</option>}
               {textFields.map((f) => (
@@ -882,49 +868,49 @@ function LayoutTab({ def }: { def: ObjectDef }) {
             </select>
           </FormField>
         ) : (
-          <FormField label="Name template" required htmlFor={ids.nameTemplate} help="Use {field_api_name} placeholders, e.g. {first_name} {last_name}.">
+          <FormField label={t('setupObjects.layout.nameTemplate')} required htmlFor={ids.nameTemplate} help={t('setupObjects.layout.nameTemplateHelp', { placeholder: '{field_api_name}', example: '{first_name} {last_name}' })}>
             <input id={ids.nameTemplate} className="input font-mono" value={nameTemplate} maxLength={200} placeholder="{first_name} {last_name}" onChange={(e) => setNameTemplate(e.target.value)} />
           </FormField>
         )}
       </section>
 
       <section className="card p-4">
-        <h2 className="mb-3 text-sm font-semibold text-slate-800">Views</h2>
+        <h2 className="mb-3 text-sm font-semibold text-slate-800">{t('setupObjects.layout.views')}</h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField label="Status field" htmlFor={ids.status} help="Picklist that drives the path bar and default Kanban grouping.">
-            {select(ids.status, statusField, setStatusField, picklists, 'None')}
+          <FormField label={t('setupObjects.layout.statusField')} htmlFor={ids.status} help={t('setupObjects.layout.statusFieldHelp')}>
+            {select(ids.status, statusField, setStatusField, picklists, t('common.none'))}
           </FormField>
-          <FormField label="Calendar date field" htmlFor={ids.date} help="Default date for calendar views.">
-            {select(ids.date, dateField, setDateField, dateFields, 'None')}
+          <FormField label={t('setupObjects.layout.dateField')} htmlFor={ids.date} help={t('setupObjects.layout.dateFieldHelp')}>
+            {select(ids.date, dateField, setDateField, dateFields, t('common.none'))}
           </FormField>
-          <FormField label="Timeline start" htmlFor={ids.tlStart} help="Start and end dates for timeline (Gantt) views.">
-            {select(ids.tlStart, tlStart, setTlStart, dateFields, 'None')}
+          <FormField label={t('setupObjects.layout.timelineStart')} htmlFor={ids.tlStart} help={t('setupObjects.layout.timelineStartHelp')}>
+            {select(ids.tlStart, tlStart, setTlStart, dateFields, t('common.none'))}
           </FormField>
-          <FormField label="Timeline end" htmlFor={ids.tlEnd}>
-            {select(ids.tlEnd, tlEnd, setTlEnd, dateFields, 'None')}
+          <FormField label={t('setupObjects.layout.timelineEnd')} htmlFor={ids.tlEnd}>
+            {select(ids.tlEnd, tlEnd, setTlEnd, dateFields, t('common.none'))}
           </FormField>
         </div>
       </section>
 
       <section className="card p-4">
-        <h2 className="mb-3 text-sm font-semibold text-slate-800">Layout</h2>
+        <h2 className="mb-3 text-sm font-semibold text-slate-800">{t('setupObjects.layout.layout')}</h2>
         <div className="grid gap-5 @3xl:grid-cols-3">
-          <FormField label={`Highlight fields (${highlight.length}/8)`} htmlFor={ids.highlight} help="Shown in the record page header.">
+          <FormField label={t('setupObjects.layout.highlightFields', { count: highlight.length, max: 8 })} htmlFor={ids.highlight} help={t('setupObjects.layout.highlightFieldsHelp')}>
             <OrderedFieldList id={ids.highlight} options={layoutOptions} value={highlight} onChange={setHighlight} max={8} />
           </FormField>
-          <FormField label={`List columns (${listFields.length}/15)`} htmlFor={ids.list} help="Default columns of list views.">
+          <FormField label={t('setupObjects.layout.listColumns', { count: listFields.length, max: 15 })} htmlFor={ids.list} help={t('setupObjects.layout.listColumnsHelp')}>
             <OrderedFieldList id={ids.list} options={layoutOptions} value={listFields} onChange={setListFields} max={15} />
           </FormField>
-          <FormField label={`Duplicate check (${dupFields.length}/5)`} htmlFor={ids.dup} help="Saving a record whose value matches another record (case-insensitive) asks for confirmation.">
+          <FormField label={t('setupObjects.layout.duplicateCheck', { count: dupFields.length, max: 5 })} htmlFor={ids.dup} help={t('setupObjects.layout.duplicateCheckHelp')}>
             <OrderedFieldList id={ids.dup} options={dupOptions} value={dupFields} onChange={setDupFields} max={5} />
           </FormField>
         </div>
       </section>
 
       <div className="sticky bottom-0 -mx-1 flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50/90 px-1 py-3 backdrop-blur">
-        {problem ? <span className="mr-auto text-xs text-rose-600">{problem}</span> : dirty ? <span className="mr-auto text-xs text-slate-500">Unsaved changes</span> : null}
+        {problem ? <span className="mr-auto text-xs text-rose-600">{problem}</span> : dirty ? <span className="mr-auto text-xs text-slate-500">{t('setupObjects.unsavedChanges')}</span> : null}
         <Button variant="primary" type="submit" icon={Check} disabled={!dirty || !!problem} loading={save.isPending}>
-          Save changes
+          {t('common.saveChanges')}
         </Button>
       </div>
     </form>
@@ -955,7 +941,7 @@ function RuleForm({ def, index, onClose }: { def: ObjectDef; index: number | nul
     },
     onSuccess: async (next) => {
       cacheObject(qc, next);
-      toast.success(index === null ? 'Validation rule created' : 'Validation rule saved');
+      toast.success(index === null ? t('setupObjects.ruleForm.created') : t('setupObjects.ruleForm.saved'));
       onClose();
       await invalidateMetadata(qc);
     },
@@ -968,13 +954,13 @@ function RuleForm({ def, index, onClose }: { def: ObjectDef; index: number | nul
     <Modal
       open
       onClose={onClose}
-      title={index === null ? 'New validation rule' : `Edit “${current?.name}”`}
+      title={index === null ? t('setupObjects.ruleForm.newTitle') : t('setupObjects.ruleForm.editTitle', { name: current?.name ?? '' })}
       size="lg"
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" type="submit" form={formId} disabled={!canSave} loading={save.isPending}>
-            Save rule
+            {t('setupObjects.ruleForm.save')}
           </Button>
         </>
       }
@@ -988,17 +974,17 @@ function RuleForm({ def, index, onClose }: { def: ObjectDef; index: number | nul
         }}
       >
         <ErrorBanner error={save.error} />
-        <FormField label="Rule name" required htmlFor={ids.name}>
+        <FormField label={t('setupObjects.ruleForm.name')} required htmlFor={ids.name}>
           <input id={ids.name} className="input" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
         </FormField>
-        <FormField label="Error condition" required htmlFor={ids.condition} help="A formula that returns TRUE when the record is invalid — the save is then rejected with the message below.">
+        <FormField label={t('setupObjects.rules.errorCondition')} required htmlFor={ids.condition} help={t('setupObjects.ruleForm.conditionHelp')}>
           <textarea id={ids.condition} className="input font-mono text-xs" rows={3} spellCheck={false} maxLength={2000} value={condition} placeholder={`${firstField} < 0`} onChange={(e) => setCondition(e.target.value)} />
         </FormField>
         <FormulaHelp examples={[`${firstField} < 0`, `ISBLANK(${firstDate})`, `${firstDate} < TODAY()`, `LEN(name) < 3`]} />
-        <FormField label="Error message" required htmlFor={ids.message}>
+        <FormField label={t('setupObjects.ruleForm.errorMessage')} required htmlFor={ids.message}>
           <input id={ids.message} className="input" value={message} maxLength={255} onChange={(e) => setMessage(e.target.value)} />
         </FormField>
-        <Toggle checked={active} onChange={setActive} label="Active" />
+        <Toggle checked={active} onChange={setActive} label={t('common.active')} />
       </form>
     </Modal>
   );
@@ -1022,26 +1008,26 @@ function RulesTab({ def }: { def: ObjectDef }) {
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-        <p className="text-sm text-slate-500">Rules are checked whenever a {def.label.toLowerCase()} is saved. Up to 30 rules.</p>
+        <p className="text-sm text-slate-500">{t('setupObjects.rules.intro', { object: inSentence(def.label), max: 30 })}</p>
         <Button variant="primary" size="sm" icon={Plus} disabled={rules.length >= 30} onClick={() => setEditing('new')}>
-          New rule
+          {t('setupObjects.rules.newRule')}
         </Button>
       </div>
       {rules.length === 0 ? (
-        <EmptyState icon={ShieldCheck} title="No validation rules">
-          Add a rule to block saves that break your data standards, e.g. a negative amount or a missing close date.
+        <EmptyState icon={ShieldCheck} title={t('setupObjects.rules.empty')}>
+          {t('setupObjects.rules.emptyHelp')}
         </EmptyState>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50/70 text-left text-xs font-semibold text-slate-500 uppercase">
               <tr>
-                <th className="px-4 py-2.5">Name</th>
-                <th className="px-4 py-2.5">Error condition</th>
-                <th className="px-4 py-2.5">Message</th>
-                <th className="px-4 py-2.5">Active</th>
+                <th className="px-4 py-2.5">{t('common.name')}</th>
+                <th className="px-4 py-2.5">{t('setupObjects.rules.errorCondition')}</th>
+                <th className="px-4 py-2.5">{t('setupObjects.rules.message')}</th>
+                <th className="px-4 py-2.5">{t('common.active')}</th>
                 <th className="px-4 py-2.5">
-                  <span className="sr-only">Actions</span>
+                  <span className="sr-only">{t('common.actions')}</span>
                 </th>
               </tr>
             </thead>
@@ -1059,21 +1045,21 @@ function RulesTab({ def }: { def: ObjectDef }) {
                     <InlineToggle
                       checked={r.active !== false}
                       disabled={update.isPending}
-                      label={`${r.name} active`}
-                      onChange={(v) => update.mutate(rules.map((x, j) => (j === i ? { ...x, active: v } : x)), { onSuccess: () => toast.success(v ? `${r.name} activated` : `${r.name} deactivated`) })}
+                      label={t('setupObjects.rules.activeLabel', { name: r.name })}
+                      onChange={(v) => update.mutate(rules.map((x, j) => (j === i ? { ...x, active: v } : x)), { onSuccess: () => toast.success(v ? t('setupObjects.rules.activated', { name: r.name }) : t('setupObjects.rules.deactivated', { name: r.name })) })}
                     />
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex justify-end gap-0.5">
-                      <IconButton icon={Pencil} label={`Edit ${r.name}`} onClick={() => setEditing(i)} />
+                      <IconButton icon={Pencil} label={t('setupObjects.editItem', { name: r.name })} onClick={() => setEditing(i)} />
                       <IconButton
                         icon={Trash}
-                        label={`Delete ${r.name}`}
+                        label={t('setupObjects.deleteItem', { name: r.name })}
                         className="hover:text-rose-600"
                         disabled={update.isPending}
                         onClick={async () => {
-                          const ok = await confirm({ title: `Delete “${r.name}”?`, message: 'Records will no longer be checked against this rule.', confirmLabel: 'Delete rule', danger: true });
-                          if (ok) update.mutate(rules.filter((_, j) => j !== i), { onSuccess: () => toast.success('Validation rule deleted') });
+                          const ok = await confirm({ title: t('setupObjects.rules.deleteTitle', { name: r.name }), message: t('setupObjects.rules.deleteMessage'), confirmLabel: t('setupObjects.rules.deleteConfirm'), danger: true });
+                          if (ok) update.mutate(rules.filter((_, j) => j !== i), { onSuccess: () => toast.success(t('setupObjects.rules.deleted')) });
                         }}
                       />
                     </div>
@@ -1093,24 +1079,28 @@ function RulesTab({ def }: { def: ObjectDef }) {
 // Page
 // ---------------------------------------------------------------------------
 
-type TabId = 'fields' | 'layout' | 'rules';
+const TAB_IDS = ['fields', 'layout', 'pageLayouts', 'rules'] as const;
+type TabId = (typeof TAB_IDS)[number];
 
 export default function ObjectDetail() {
   const { api: apiName } = useParams();
-  const { def, isLoading, error } = useObjectDef(apiName);
-  const objects = useObjects();
+  const { def, isLoading, error } = useSetupObjectDef(apiName);
+  const objects = useSetupObjects();
   const qc = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<TabId>('fields');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<TabId>(() => TAB_IDS.find((id) => id === params.get('tab')) ?? 'fields');
+  // Stays mounted once opened so a layout draft survives switching tabs.
+  const [layoutsOpened, setLayoutsOpened] = useState(tab === 'pageLayouts');
 
   const remove = useMutation({
     mutationFn: (name: string) => api.del(`/api/objects/${name}`),
     onSuccess: async (_r, name) => {
       navigate('/setup/objects');
-      qc.setQueryData<ObjectDef[]>(['objects'], (old) => old?.filter((o) => o.apiName !== name));
-      toast.success('Object deleted');
+      for (const key of [['objects'], ['objects', 'raw']]) qc.setQueryData<ObjectDef[]>(key, (old) => old?.filter((o) => o.apiName !== name));
+      toast.success(t('setupObjects.detail.deleted'));
       await Promise.all([invalidateMetadata(qc), qc.invalidateQueries({ queryKey: ['automations'] })]);
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -1128,14 +1118,14 @@ export default function ObjectDetail() {
       <div className="mx-auto max-w-3xl p-6">
         <div className="card">
           <EmptyState
-            title="Object not found"
+            title={t('setupObjects.detail.notFound')}
             action={
               <Link to="/setup/objects" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
-                Back to objects
+                {t('setupObjects.detail.backToObjects')}
               </Link>
             }
           >
-            It may have been deleted, or you may not have access to it.
+            {t('setupObjects.detail.notFoundHelp')}
           </EmptyState>
         </div>
       </div>
@@ -1143,9 +1133,9 @@ export default function ObjectDetail() {
 
   const onDelete = async () => {
     const ok = await confirm({
-      title: `Delete ${def.label}?`,
-      message: `This permanently deletes the ${def.label} object together with all of its records, automations and list views. This cannot be undone.`,
-      confirmLabel: 'Delete object',
+      title: t('setupObjects.detail.deleteTitle', { label: def.label }),
+      message: t('setupObjects.detail.deleteMessage', { object: def.label }),
+      confirmLabel: t('setupObjects.detail.deleteObject'),
       danger: true,
     });
     if (ok) remove.mutate(def.apiName);
@@ -1154,7 +1144,7 @@ export default function ObjectDetail() {
   return (
     <div className="mx-auto max-w-6xl p-6">
       <Link to="/setup/objects" className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
-        <ChevronLeft className="size-4" aria-hidden /> Objects
+        <ChevronLeft className="size-4" aria-hidden /> {t('setupObjects.detail.back')}
       </Link>
       <PageHeader
         icon={def.icon}
@@ -1163,17 +1153,17 @@ export default function ObjectDetail() {
         subtitle={
           <span className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-xs">{def.apiName}</span>
-            {def.isCustom ? <Badge color="purple">Custom</Badge> : <Badge color="gray">Standard</Badge>}
+            {def.isCustom ? <Badge color="purple">{t('setupObjects.custom')}</Badge> : <Badge color="gray">{t('setupObjects.standard')}</Badge>}
           </span>
         }
         actions={
           <>
             <Link to={`/o/${def.apiName}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-700 shadow-xs hover:bg-slate-50">
-              <ExternalLink className="size-4" aria-hidden /> View records
+              <ExternalLink className="size-4" aria-hidden /> {t('setupObjects.detail.viewRecords')}
             </Link>
             {def.isCustom && (
               <Button variant="danger" icon={Trash} loading={remove.isPending} onClick={() => void onDelete()}>
-                Delete object
+                {t('setupObjects.detail.deleteObject')}
               </Button>
             )}
           </>
@@ -1183,17 +1173,26 @@ export default function ObjectDetail() {
       </PageHeader>
       <Tabs<TabId>
         tabs={[
-          { id: 'fields', label: `Fields (${def.fields.length})` },
-          { id: 'layout', label: 'Layout & behavior' },
-          { id: 'rules', label: `Validation rules (${def.validationRules?.length ?? 0})` },
+          { id: 'fields', label: t('setupObjects.detail.tabs.fields', { count: def.fields.length }) },
+          { id: 'layout', label: t('setupObjects.detail.tabs.layout') },
+          { id: 'pageLayouts', label: t('setupObjects.detail.tabs.pageLayouts') },
+          { id: 'rules', label: t('setupObjects.detail.tabs.rules', { count: def.validationRules?.length ?? 0 }) },
         ]}
         value={tab}
-        onChange={setTab}
+        onChange={(next) => {
+          if (next === 'pageLayouts') setLayoutsOpened(true);
+          setTab(next);
+        }}
       />
       <div className="mt-4">
         {tab === 'fields' && <FieldsTab def={def} objects={objects.data ?? []} />}
         {tab === 'layout' && <LayoutTab key={def.updatedAt ?? ''} def={def} />}
         {tab === 'rules' && <RulesTab def={def} />}
+        {layoutsOpened && (
+          <div hidden={tab !== 'pageLayouts'}>
+            <PageLayoutsTab key={def.apiName} def={def} />
+          </div>
+        )}
       </div>
     </div>
   );

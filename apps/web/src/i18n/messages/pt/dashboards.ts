@@ -1,0 +1,76 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  title: 'Painéis',
+  subtitle: 'Coleções de gráficos de relatórios. Cada pessoa vê os resultados dos registros que pode acessar.',
+  newDashboard: 'Novo painel',
+
+  list: {
+    emptyTitle: 'Nenhum painel ainda',
+    emptyAnalyst: 'Crie um painel para reunir vários gráficos de relatórios em uma única página.',
+    emptyViewer: 'Os painéis criados pelos seus analistas e administradores aparecerão aqui.',
+    noDescription: 'Sem descrição',
+    noWidgets: 'Nenhum widget ainda',
+    widgetCount: { one: '{count} widget', other: '{count} widgets' },
+    lastModified: 'Última modificação em {date}',
+    updated: 'Atualizado {time}',
+  },
+
+  create: {
+    namePlaceholder: 'ex.: Visão geral de vendas',
+    hint: 'Em seguida, você poderá adicionar relatórios ao painel.',
+    created: 'Painel “{name}” criado',
+  },
+
+  view: {
+    notFound: 'Painel não encontrado',
+    notFoundMessage: 'Ele pode ter sido excluído.',
+    backToList: 'Voltar para painéis',
+    loadFailed: 'Não foi possível carregar este painel.',
+    deleteDashboard: 'Excluir painel',
+    deleteTitle: 'Excluir painel?',
+    deleteMessage: '“{name}” será excluído permanentemente. Os relatórios dele serão mantidos.',
+    deleteHomeOf: 'Ele é o painel inicial de {apps}.',
+    deleted: 'Painel “{name}” excluído',
+    dataAsOf: 'Dados atualizados às {time}. Cada widget conta apenas os registros que você pode acessar.',
+  },
+
+  editor: {
+    title: 'Editar painel',
+    save: 'Salvar painel',
+    saved: 'Painel “{name}” salvo',
+    nameRequired: 'O nome é obrigatório',
+    discardTitle: 'Descartar alterações?',
+    discardMessage: 'Suas alterações neste painel não foram salvas.',
+    discard: 'Descartar',
+    app: 'Aplicativo',
+    appHelp: 'Lista o painel em um aplicativo.',
+    widgets: 'Widgets',
+    noWidgets: 'Nenhum widget ainda. Adicione um relatório abaixo.',
+    deletedReport: 'Relatório excluído. Ele será removido quando você salvar.',
+    report: 'Relatório',
+    loadingReport: 'Carregando relatório…',
+    usesReportName: 'usa o nome do relatório como título',
+    widgetTitle: 'Título do widget {number}',
+    widgetSize: 'Tamanho do widget {number}',
+    moveUp: 'Mover widget {number} para cima',
+    moveDown: 'Mover widget {number} para baixo',
+    remove: 'Remover widget {number}',
+    sizes: {
+      small: 'Pequeno (⅓ da largura)',
+      medium: 'Médio (⅔ da largura)',
+      full: 'Largura total',
+    },
+    addReport: 'Adicionar um relatório',
+    addReportOption: 'Adicionar um relatório…',
+    loadingReports: 'Carregando relatórios…',
+    noReports: 'Nenhum relatório disponível',
+    maxWidgets: 'Limite de {max} widgets atingido',
+    deletedReportsRemoved: {
+      one: '{count} relatório excluído será removido ao salvar.',
+      other: '{count} relatórios excluídos serão removidos ao salvar.',
+    },
+    layoutPreview: 'Pré-visualização do layout',
+    smallScreens: 'Em telas pequenas, cada widget ocupa a largura total.',
+  },
+} satisfies Translation['dashboards'];

@@ -1,0 +1,76 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  title: 'Tableaux de bord',
+  subtitle: 'Des ensembles de graphiques de rapports. Chacun voit les résultats des enregistrements auxquels il a accès.',
+  newDashboard: 'Nouveau tableau de bord',
+
+  list: {
+    emptyTitle: 'Aucun tableau de bord pour le moment',
+    emptyAnalyst: 'Créez un tableau de bord pour regrouper plusieurs graphiques de rapports sur une même page.',
+    emptyViewer: 'Les tableaux de bord créés par vos analystes et administrateurs apparaîtront ici.',
+    noDescription: 'Aucune description',
+    noWidgets: 'Aucun composant pour le moment',
+    widgetCount: { one: '{count} composant', other: '{count} composants' },
+    lastModified: 'Dernière modification : {date}',
+    updated: 'Mis à jour : {time}',
+  },
+
+  create: {
+    namePlaceholder: 'Ex. : Vue d’ensemble des ventes',
+    hint: 'Vous pourrez ensuite ajouter des rapports au tableau de bord.',
+    created: 'Tableau de bord « {name} » créé',
+  },
+
+  view: {
+    notFound: 'Tableau de bord introuvable',
+    notFoundMessage: 'Il a peut-être été supprimé.',
+    backToList: 'Retour aux tableaux de bord',
+    loadFailed: 'Impossible de charger ce tableau de bord.',
+    deleteDashboard: 'Supprimer le tableau de bord',
+    deleteTitle: 'Supprimer le tableau de bord ?',
+    deleteMessage: 'Le tableau de bord « {name} » sera définitivement supprimé. Ses rapports sont conservés.',
+    deleteHomeOf: 'Il s’agit du tableau de bord d’accueil de : {apps}.',
+    deleted: 'Tableau de bord « {name} » supprimé',
+    dataAsOf: 'Données à jour à {time}. Chaque composant ne compte que les enregistrements auxquels vous avez accès.',
+  },
+
+  editor: {
+    title: 'Modifier le tableau de bord',
+    save: 'Enregistrer le tableau de bord',
+    saved: 'Tableau de bord « {name} » enregistré',
+    nameRequired: 'Le nom est obligatoire',
+    discardTitle: 'Abandonner les modifications ?',
+    discardMessage: 'Vos modifications de ce tableau de bord n’ont pas été enregistrées.',
+    discard: 'Abandonner',
+    app: 'Application',
+    appHelp: 'Classe le tableau de bord dans une application.',
+    widgets: 'Composants',
+    noWidgets: 'Aucun composant pour le moment. Ajoutez un rapport ci-dessous.',
+    deletedReport: 'Rapport supprimé. Il sera retiré lors de l’enregistrement.',
+    report: 'Rapport',
+    loadingReport: 'Chargement du rapport…',
+    usesReportName: 'utilise le nom du rapport comme titre',
+    widgetTitle: 'Titre du composant {number}',
+    widgetSize: 'Taille du composant {number}',
+    moveUp: 'Monter le composant {number}',
+    moveDown: 'Descendre le composant {number}',
+    remove: 'Retirer le composant {number}',
+    sizes: {
+      small: 'Petit (⅓ de la largeur)',
+      medium: 'Moyen (⅔ de la largeur)',
+      full: 'Pleine largeur',
+    },
+    addReport: 'Ajouter un rapport',
+    addReportOption: 'Ajouter un rapport…',
+    loadingReports: 'Chargement des rapports…',
+    noReports: 'Aucun rapport disponible',
+    maxWidgets: 'Limite de {max} composants atteinte',
+    deletedReportsRemoved: {
+      one: '{count} rapport supprimé sera retiré lors de l’enregistrement.',
+      other: '{count} rapports supprimés seront retirés lors de l’enregistrement.',
+    },
+    layoutPreview: 'Aperçu de la disposition',
+    smallScreens: 'Sur les petits écrans, chaque composant occupe toute la largeur.',
+  },
+} satisfies Translation['dashboards'];

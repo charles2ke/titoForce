@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api.ts';
+import { inSentence, intlLocale, t } from '../../i18n/index.ts';
 import { hex } from '../../lib/colors.ts';
 import { addDays, fieldDef, parseDate, todayIso, toDateInput, valueOf } from '../../lib/format.ts';
 import { usePermissions } from '../../lib/hooks.ts';
@@ -13,7 +14,12 @@ import { BOARD_LIMIT } from './KanbanView.tsx';
 import type { BaseQuery } from './TableView.tsx';
 
 const MONTH_RE = /^(\d{4})-(\d{2})$/;
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/** Short weekday names in the UI language, Monday first (1 January 2024 was a Monday). */
+const weekdayNames = (): string[] => {
+  const format = new Intl.DateTimeFormat(intlLocale(), { weekday: 'short' });
+  return Array.from({ length: 7 }, (_, i) => format.format(new Date(2024, 0, 1 + i)));
+};
 
 export const currentMonth = () => todayIso().slice(0, 7);
 
@@ -52,7 +58,7 @@ function EventChip({ def, record }: { def: ObjectDef; record: CrmRecord }) {
       className="flex items-center gap-1.5 truncate rounded px-1.5 py-0.5 text-xs text-slate-700 hover:bg-slate-100"
     >
       <span className="size-1.5 shrink-0 rounded-full" style={{ background: hex(color) }} aria-hidden />
-      <span className="truncate">{record.name || '(no name)'}</span>
+      <span className="truncate">{record.name || t('views.noName')}</span>
     </Link>
   );
 }
@@ -81,7 +87,7 @@ export function CalendarView({ def, base, dateField, month, onMonth }: { def: Ob
     enabled: !!field,
   });
 
-  if (!field || (field.type !== 'date' && field.type !== 'datetime')) return <ErrorBanner className="m-4" error={new Error(`Calendar views need a date field; “${dateField}” is not one.`)} />;
+  if (!field || (field.type !== 'date' && field.type !== 'datetime')) return <ErrorBanner className="m-4" error={new Error(t('views.calendar.needsDateField', { field: dateField }))} />;
 
   const byDay = new Map<string, CrmRecord[]>();
   for (const r of query.data?.records ?? []) {
@@ -100,15 +106,15 @@ export function CalendarView({ def, base, dateField, month, onMonth }: { def: Ob
     <div className="flex min-h-0 flex-1 flex-col p-4">
       <div className="mb-3 flex items-center gap-2">
         <h2 className="text-base font-semibold text-slate-900" aria-live="polite">
-          {first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+          {first.toLocaleDateString(intlLocale(), { month: 'long', year: 'numeric' })}
         </h2>
-        <span className="text-xs text-slate-500">by {field.label}</span>
+        <span className="text-xs text-slate-500">{t('views.calendar.byField', { field: field.label })}</span>
         <div className="ml-auto flex items-center gap-1">
-          <IconButton icon={ChevronLeft} label="Previous month" onClick={() => onMonth(shiftMonth(monthKey, -1))} />
+          <IconButton icon={ChevronLeft} label={t('views.calendar.previousMonth')} onClick={() => onMonth(shiftMonth(monthKey, -1))} />
           <Button size="sm" onClick={() => onMonth(currentMonth())}>
-            Today
+            {t('views.today')}
           </Button>
-          <IconButton icon={ChevronRight} label="Next month" onClick={() => onMonth(shiftMonth(monthKey, 1))} />
+          <IconButton icon={ChevronRight} label={t('views.calendar.nextMonth')} onClick={() => onMonth(shiftMonth(monthKey, 1))} />
         </div>
       </div>
       {query.error ? (
@@ -116,8 +122,8 @@ export function CalendarView({ def, base, dateField, month, onMonth }: { def: Ob
       ) : query.isLoading ? (
         <Loading />
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-7 overflow-hidden rounded-xl border border-slate-200 bg-slate-200 [gap:1px]" role="grid" aria-label="Calendar">
-          {WEEKDAYS.map((d) => (
+        <div className="grid min-h-0 flex-1 grid-cols-7 overflow-hidden rounded-xl border border-slate-200 bg-slate-200 [gap:1px]" role="grid" aria-label={t('views.calendar.gridLabel')}>
+          {weekdayNames().map((d) => (
             <div key={d} role="columnheader" className="bg-slate-50 px-2 py-1.5 text-xs font-semibold text-slate-500">
               {d}
             </div>
@@ -125,9 +131,9 @@ export function CalendarView({ def, base, dateField, month, onMonth }: { def: Ob
           {days.map((day) => {
             const items = byDay.get(day) ?? [];
             const inMonth = day.slice(0, 7) === monthKey;
-            const label = parseDate(day)!.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+            const label = parseDate(day)!.toLocaleDateString(intlLocale(), { weekday: 'long', month: 'long', day: 'numeric' });
             return (
-              <div key={day} role="gridcell" aria-label={`${label}: ${items.length} ${items.length === 1 ? 'item' : 'items'}`} className={cx('group flex min-h-24 flex-col gap-0.5 p-1', inMonth ? 'bg-white' : 'bg-slate-50/80')}>
+              <div key={day} role="gridcell" aria-label={t('views.calendar.dayItems', { date: label, count: items.length })} className={cx('group flex min-h-24 flex-col gap-0.5 p-1', inMonth ? 'bg-white' : 'bg-slate-50/80')}>
                 <div className="flex items-center justify-between px-1">
                   <span className={cx('grid size-6 place-items-center rounded-full text-xs', day === today ? 'bg-indigo-600 font-semibold text-white' : inMonth ? 'text-slate-700' : 'text-slate-400')}>
                     {Number(day.slice(8))}
@@ -136,7 +142,7 @@ export function CalendarView({ def, base, dateField, month, onMonth }: { def: Ob
                     <button
                       type="button"
                       onClick={() => setCreating(day)}
-                      aria-label={`New ${def.label.toLowerCase()} on ${label}`}
+                      aria-label={t('views.calendar.newOn', { label: inSentence(def.label), date: label })}
                       className="rounded p-0.5 text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-100 hover:text-slate-700 focus-visible:opacity-100"
                     >
                       <Plus className="size-3.5" />
@@ -151,7 +157,7 @@ export function CalendarView({ def, base, dateField, month, onMonth }: { def: Ob
                     className="w-64"
                     trigger={({ toggle, open }) => (
                       <button type="button" onClick={toggle} aria-expanded={open} className="px-1.5 text-left text-xs font-medium text-indigo-600 hover:underline">
-                        +{items.length - 3} more
+                        {t('views.calendar.more', { count: items.length - 3 })}
                       </button>
                     )}
                   >
@@ -171,7 +177,7 @@ export function CalendarView({ def, base, dateField, month, onMonth }: { def: Ob
         </div>
       )}
       {query.data && query.data.total > query.data.records.length && (
-        <p className="mt-2 text-xs text-amber-700">Showing the first {query.data.records.length.toLocaleString()} of {query.data.total.toLocaleString()} records in this range.</p>
+        <p className="mt-2 text-xs text-amber-700">{t('views.calendar.truncated', { shown: query.data.records.length, total: query.data.total })}</p>
       )}
       <RecordFormModal object={def.apiName} open={!!creating} initial={creating ? { [dateField]: creating } : undefined} onClose={() => setCreating(null)} />
     </div>

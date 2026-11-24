@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api.ts';
+import { t } from '../../i18n/index.ts';
 import { invalidateRecordData } from '../../lib/hooks.ts';
 import { useToast } from '../feedback.tsx';
 import { LookupInput } from '../FieldInput.tsx';
@@ -36,30 +37,28 @@ export function ConvertLeadModal({ lead, onClose }: { lead: CrmRecord; onClose: 
     onSuccess: async (res) => {
       setResult(res);
       await invalidateRecordData(qc);
-      toast.success(`${lead.name} converted`);
+      toast.success(t('record.convert.converted', { name: lead.name }));
     },
   });
   const blocked = accountMode === 'existing' && !accountId;
 
   if (result) {
-    const links: { label: string; rec: CrmRecord; note?: string }[] = [
-      { label: 'Account', rec: result.account, note: result.reusedAccount ? 'existing' : 'new' },
-      { label: 'Contact', rec: result.contact, note: 'new' },
-      ...(result.opportunity ? [{ label: 'Opportunity', rec: result.opportunity, note: 'new' }] : []),
+    const links: { key: string; label: string; rec: CrmRecord }[] = [
+      { key: 'account', label: t(result.reusedAccount ? 'record.convert.accountExisting' : 'record.convert.accountNew'), rec: result.account },
+      { key: 'contact', label: t('record.convert.contactNew'), rec: result.contact },
+      ...(result.opportunity ? [{ key: 'opportunity', label: t('record.convert.opportunityNew'), rec: result.opportunity }] : []),
     ];
     return (
-      <Modal open onClose={onClose} size="sm" title="Lead converted" footer={<Button onClick={onClose}>Done</Button>}>
-        <ul className="space-y-2" aria-label="Converted records">
+      <Modal open onClose={onClose} size="sm" title={t('record.convert.doneTitle')} footer={<Button onClick={onClose}>{t('common.done')}</Button>}>
+        <ul className="space-y-2" aria-label={t('record.convert.resultsLabel')}>
           {links.map((l) => (
-            <li key={l.label} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+            <li key={l.key} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
               <div className="min-w-0">
-                <p className="text-xs text-slate-500">
-                  {l.label} ({l.note})
-                </p>
+                <p className="text-xs text-slate-500">{l.label}</p>
                 <p className="truncate text-sm font-medium text-slate-900">{l.rec.name}</p>
               </div>
               <Link to={`/r/${l.rec.id}`} onClick={onClose} className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
-                Open <ArrowRight className="size-3.5" aria-hidden />
+                {t('common.open')} <ArrowRight className="size-3.5" aria-hidden />
               </Link>
             </li>
           ))}
@@ -73,28 +72,28 @@ export function ConvertLeadModal({ lead, onClose }: { lead: CrmRecord; onClose: 
       open
       onClose={onClose}
       size="md"
-      title={`Convert lead: ${lead.name}`}
+      title={t('record.convert.title', { name: lead.name })}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" disabled={blocked} loading={convert.isPending} onClick={() => convert.mutate()}>
-            Convert
+            {t('record.convert.action')}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <p className="text-sm text-slate-600">Converting creates a contact, links it to an account and, optionally, opens an opportunity. The lead is then marked Converted.</p>
+        <p className="text-sm text-slate-600">{t('record.convert.intro')}</p>
         <ErrorBanner error={convert.error} />
         <fieldset className="space-y-2">
-          <legend className="mb-1 text-sm font-medium text-slate-700">Account</legend>
+          <legend className="mb-1 text-sm font-medium text-slate-700">{t('record.convert.account')}</legend>
           <label className="flex items-start gap-2 text-sm text-slate-700">
             <input type="radio" name="account-mode" className="mt-1" checked={accountMode === 'auto'} onChange={() => setAccountMode('auto')} />
-            <span>{company ? `Use the account named “${company}” if it exists, otherwise create it` : 'Create a new account from the lead’s name'}</span>
+            <span>{company ? t('record.convert.useNamedAccount', { name: company }) : t('record.convert.createAccount')}</span>
           </label>
           <label className="flex items-start gap-2 text-sm text-slate-700">
             <input type="radio" name="account-mode" className="mt-1" checked={accountMode === 'existing'} onChange={() => setAccountMode('existing')} />
-            <span>Attach to an existing account</span>
+            <span>{t('record.convert.attachExisting')}</span>
           </label>
           {accountMode === 'existing' && (
             <div className="pl-6">
@@ -103,7 +102,7 @@ export function ConvertLeadModal({ lead, onClose }: { lead: CrmRecord; onClose: 
                 referenceTo="account"
                 value={accountId}
                 label={accountName}
-                placeholder="Search accounts…"
+                placeholder={t('record.convert.searchAccounts')}
                 onChange={(id, name) => {
                   setAccountId(id);
                   setAccountName(name ?? null);
@@ -113,9 +112,9 @@ export function ConvertLeadModal({ lead, onClose }: { lead: CrmRecord; onClose: 
           )}
         </fieldset>
         <div className="space-y-2">
-          <Toggle checked={createOpportunity} onChange={setCreateOpportunity} label="Create an opportunity" />
+          <Toggle checked={createOpportunity} onChange={setCreateOpportunity} label={t('record.convert.createOpportunity')} />
           {createOpportunity && (
-            <FormField label="Opportunity name" htmlFor="convert-opp-name" help="Leave blank to use “<Account> - New Business”.">
+            <FormField label={t('record.convert.opportunityName')} htmlFor="convert-opp-name" help={t('record.convert.opportunityNameHelp')}>
               <input id="convert-opp-name" className="input" maxLength={255} value={opportunityName} onChange={(e) => setOpportunityName(e.target.value)} />
             </FormField>
           )}

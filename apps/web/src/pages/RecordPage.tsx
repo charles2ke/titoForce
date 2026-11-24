@@ -1,4 +1,4 @@
-import type { CrmRecord, FieldDef, ObjectDef, RecordResponse, RefMap } from '@titoforce/shared';
+import type { CrmRecord, ObjectDef, PageLayoutDef, RecordResponse, RefMap } from '@titoforce/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ellipsis, GitPullRequestArrow, Pencil, Repeat, ShieldCheck, Sparkles, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -11,10 +11,14 @@ import { ApprovalsCard, SubmitApprovalModal, useApprovalProcesses, useRecordAppr
 import { DetailsPanel, PathBar } from '../components/record/RecordDetails.tsx';
 import { RelatedLists, useRelated } from '../components/record/RecordRelated.tsx';
 import { ConvertLeadModal } from '../components/record/ConvertLeadModal.tsx';
+import { PresenceBar } from '../components/record/Presence.tsx';
 import { RecordFormModal } from '../components/RecordForm.tsx';
 import { Button, EmptyState, ErrorBanner, Loading, MenuItem, ObjectTile, Popover, Tabs } from '../components/ui.tsx';
-import { fieldDef, valueOf } from '../lib/format.ts';
-import { invalidateRecordData, useAiPanel, useObjectDef, usePermissions } from '../lib/hooks.ts';
+import { inSentence, t, tEn } from '../i18n/index.ts';
+import { valueOf } from '../lib/format.ts';
+import { invalidateRecordData, useAiPanel, useAuth, useObjectDef, usePermissions } from '../lib/hooks.ts';
+import { headerFields, useLayout } from '../lib/layout.ts';
+import { usePresence } from '../lib/realtime.tsx';
 
 /** The specialist agent to open for each object; anything else gets the general copilot. */
 const AGENT_FOR: Record<string, string> = {
@@ -31,14 +35,22 @@ export default function RecordPage() {
   const { id = '' } = useParams();
   const q = useQuery({ queryKey: ['record', id], queryFn: () => api.get<RecordResponse>(`/api/lookup/${encodeURIComponent(id)}`), retry: (n, err) => !(err instanceof ApiError && err.status < 500) && n < 2 });
   const { def, isLoading } = useObjectDef(q.data?.record.object);
-  if (q.isLoading || (q.data && isLoading)) return <Loading />;
+  const layout = useLayout(q.data?.record.object);
+  if (q.isLoading || (q.data && (isLoading || layout.isLoading))) return <Loading />;
   if (q.error) {
     const missing = q.error instanceof ApiError && (q.error.status === 404 || q.error.status === 403);
     return (
       <div className="p-6">
         {missing ? (
-          <EmptyState title="Record not available" action={<Link to="/" className="text-sm font-medium text-indigo-600 hover:underline">Go home</Link>}>
-            It may have been deleted, or you may not have access to it.
+          <EmptyState
+            title={t('record.notAvailable.title')}
+            action={
+              <Link to="/" className="text-sm font-medium text-indigo-600 hover:underline">
+                {t('record.notAvailable.goHome')}
+              </Link>
+            }
+          >
+            {t('record.notAvailable.body')}
           </EmptyState>
         ) : (
           <ErrorBanner error={q.error} />
@@ -46,12 +58,12 @@ export default function RecordPage() {
       </div>
     );
   }
-  if (!q.data || !def) return <div className="p-6"><ErrorBanner error="This record’s object is not available to you." /></div>;
-  return <RecordBody key={id} def={def} record={q.data.record} refs={q.data.refs} />;
+  if (!q.data || !def) return <div className="p-6"><ErrorBanner error={t('record.notAvailable.objectUnavailable')} /></div>;
+  return <RecordBody key={id} def={def} record={q.data.record} refs={q.data.refs} layout={layout.data} />;
 }
 
-function Highlights({ def, record, refs }: { def: ObjectDef; record: CrmRecord; refs: RefMap }) {
-  const fields = (def.highlightFields ?? []).map((f) => fieldDef(def, f)).filter((f): f is FieldDef => !!f && f.apiName !== def.statusField);
+function Highlights({ def, record, refs, layout }: { def: ObjectDef; record: CrmRecord; refs: RefMap; layout: PageLayoutDef | undefined }) {
+  const fields = headerFields(def, layout);
   if (!fields.length) return null;
   return (
     <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-2">
@@ -67,8 +79,10 @@ function Highlights({ def, record, refs }: { def: ObjectDef; record: CrmRecord; 
   );
 }
 
-function RecordBody({ def, record, refs }: { def: ObjectDef; record: CrmRecord; refs: RefMap }) {
+function RecordBody({ def, record, refs, layout }: { def: ObjectDef; record: CrmRecord; refs: RefMap; layout: PageLayoutDef | undefined }) {
   const perms = usePermissions();
+  const { user } = useAuth();
+  const viewers = usePresence(record.id, user.id);
   const ai = useAiPanel();
   const qc = useQueryClient();
   const toast = useToast();
@@ -97,7 +111,7 @@ function RecordBody({ def, record, refs }: { def: ObjectDef; record: CrmRecord; 
       navigate(`/o/${def.apiName}`, { replace: true });
       qc.removeQueries({ queryKey: ['record', record.id] });
       await invalidateRecordData(qc);
-      toast.success(`${def.label} “${record.name}” deleted`);
+      toast.success(t('record.page.deleted', { label: def.label, name: record.name }));
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
@@ -105,9 +119,9 @@ function RecordBody({ def, record, refs }: { def: ObjectDef; record: CrmRecord; 
   const askAi = (prompt?: string) => ai.open({ recordId: record.id, recordName: record.name, agentId, prompt });
   const onDelete = async () => {
     const ok = await confirm({
-      title: `Delete ${def.label.toLowerCase()}?`,
-      message: `“${record.name}” will be permanently deleted. Records that reference it may be deleted too, or have the reference cleared.`,
-      confirmLabel: 'Delete',
+      title: t('record.page.deleteTitle', { label: inSentence(def.label) }),
+      message: t('record.page.deleteMessage', { name: record.name }),
+      confirmLabel: t('common.delete'),
       danger: true,
     });
     if (ok) remove.mutate();
@@ -118,36 +132,37 @@ function RecordBody({ def, record, refs }: { def: ObjectDef; record: CrmRecord; 
       <div className="border-b border-slate-200 bg-white px-6 pt-5 pb-4">
         <div className="flex flex-wrap items-start gap-4">
           <ObjectTile icon={def.icon} color={def.color} size="lg" />
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 basis-48">
             <Link to={`/o/${def.apiName}`} className="text-xs font-medium text-slate-500 hover:text-indigo-600 hover:underline">
               {def.label}
             </Link>
-            <h1 className="truncate text-xl font-semibold text-slate-900">{record.name || '(no name)'}</h1>
+            <h1 className="truncate text-xl font-semibold text-slate-900">{record.name || t('record.noName')}</h1>
             {record.ownerId && (
               <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
-                Owner <UserChip id={record.ownerId} name={refs[record.ownerId]?.name} />
+                {t('common.owner')} <UserChip id={record.ownerId} name={refs[record.ownerId]?.name} />
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <PresenceBar def={def} viewers={viewers} />
             {canEdit && (
               <Button icon={Pencil} onClick={() => setEditing(true)}>
-                Edit
+                {t('common.edit')}
               </Button>
             )}
             {isLead && !converted && canEdit && (
               <Button icon={Repeat} onClick={() => setConverting(true)}>
-                Convert
+                {t('record.convert.action')}
               </Button>
             )}
             <Button variant="ai" icon={Sparkles} onClick={() => askAi()}>
-              Ask AI
+              {t('record.page.askAi')}
             </Button>
             <Popover
               align="right"
               className="w-56"
               trigger={({ toggle, open }) => (
-                <button type="button" onClick={toggle} aria-expanded={open} aria-label="More actions" className="inline-flex size-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
+                <button type="button" onClick={toggle} aria-expanded={open} aria-label={t('common.moreActions')} className="inline-flex size-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
                   <Ellipsis className="size-4" />
                 </button>
               )}
@@ -158,10 +173,10 @@ function RecordBody({ def, record, refs }: { def: ObjectDef; record: CrmRecord; 
                     icon={Sparkles}
                     onClick={() => {
                       close();
-                      askAi(`Summarize this ${def.label.toLowerCase()} and suggest next steps.`);
+                      askAi(tEn('record.page.summarizePrompt', { label: def.label.toLowerCase() }));
                     }}
                   >
-                    Summarize with AI
+                    {t('record.page.summarizeWithAi')}
                   </MenuItem>
                   {canSubmit && (
                     <MenuItem
@@ -171,7 +186,7 @@ function RecordBody({ def, record, refs }: { def: ObjectDef; record: CrmRecord; 
                         setSubmitting(true);
                       }}
                     >
-                      Submit for approval
+                      {t('record.approvals.submit')}
                     </MenuItem>
                   )}
                   <MenuItem
@@ -181,7 +196,7 @@ function RecordBody({ def, record, refs }: { def: ObjectDef; record: CrmRecord; 
                       setParams({ tab: 'related' }, { replace: true });
                     }}
                   >
-                    Show related records
+                    {t('record.page.showRelated')}
                   </MenuItem>
                   {canDelete && (
                     <MenuItem
@@ -192,7 +207,7 @@ function RecordBody({ def, record, refs }: { def: ObjectDef; record: CrmRecord; 
                         void onDelete();
                       }}
                     >
-                      Delete
+                      {t('common.delete')}
                     </MenuItem>
                   )}
                 </>
@@ -200,7 +215,7 @@ function RecordBody({ def, record, refs }: { def: ObjectDef; record: CrmRecord; 
             </Popover>
           </div>
         </div>
-        <Highlights def={def} record={record} refs={refs} />
+        <Highlights def={def} record={record} refs={refs} layout={layout} />
         <div className="mt-4">
           <PathBar def={def} record={record} />
         </div>
@@ -210,15 +225,15 @@ function RecordBody({ def, record, refs }: { def: ObjectDef; record: CrmRecord; 
         <div className="@container min-w-0">
           <Tabs
             tabs={[
-              { id: 'details', label: 'Details' },
-              { id: 'related', label: relatedCount ? `Related (${relatedCount.toLocaleString()})` : 'Related' },
+              { id: 'details', label: t('common.details') },
+              { id: 'related', label: relatedCount ? t('record.page.relatedCount', { count: relatedCount }) : t('record.page.related') },
             ]}
             value={tab}
             onChange={(t) => setParams(t === 'details' ? {} : { tab: t }, { replace: true })}
           />
-          <div className="mt-4">{tab === 'details' ? <DetailsPanel def={def} record={record} refs={refs} /> : <RelatedLists def={def} record={record} />}</div>
+          <div className="mt-4">{tab === 'details' ? <DetailsPanel def={def} record={record} refs={refs} layout={layout} viewers={viewers} /> : <RelatedLists def={def} record={record} />}</div>
         </div>
-        <aside className="min-w-0 space-y-6" aria-label="Activity and approvals">
+        <aside className="min-w-0 space-y-6" aria-label={t('record.page.sidebarLabel')}>
           <ApprovalsCard def={def} record={record} />
           <ActivityPanel def={def} record={record} />
         </aside>

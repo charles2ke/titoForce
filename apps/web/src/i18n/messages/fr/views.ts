@@ -1,0 +1,66 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  noName: '(sans nom)',
+  today: 'Aujourd’hui',
+
+  table: {
+    selectAll: 'Tout sélectionner sur cette page',
+    selectRecord: 'Sélectionner {name}',
+    rowActions: 'Actions pour {name}',
+    selected: { one: '{count} sélectionné', other: '{count} sélectionnés' },
+    updateField: 'Mettre à jour le champ',
+    clearSelection: 'Effacer la sélection',
+    emptyTitle: 'Aucun résultat pour les {plural}',
+    emptyFiltered: 'Essayez une autre recherche ou supprimez des filtres.',
+    emptyCreate: 'Pour commencer, créez un enregistrement de type {label}.',
+    deleteTitle: 'Supprimer l’enregistrement de type {label} ?',
+    deleteMessage: 'L’enregistrement « {name} » sera définitivement supprimé.',
+    deleted: 'Enregistrement « {name} » supprimé',
+    bulkDeleteTitle: { one: 'Supprimer {count} enregistrement ?', other: 'Supprimer {count} enregistrements ?' },
+    bulkDeleteMessage: 'Cette action est irréversible. Les enregistrements que vous n’êtes pas autorisé à supprimer sont ignorés.',
+    bulkDeleted: { one: '{count} enregistrement supprimé', other: '{count} enregistrements supprimés' },
+    bulkDeletePartial: 'Enregistrements supprimés : {done} ; échecs : {failed}. Erreur : {error}',
+    bulkUpdateTitle: { one: 'Mettre à jour {count} {singular}', other: 'Mettre à jour {count} {plural}' },
+    update: 'Mettre à jour',
+    newValue: 'Nouvelle valeur',
+    newValueHelp: 'Laissez vide pour effacer le champ.',
+    bulkUpdated: { one: '{count} enregistrement mis à jour', other: '{count} enregistrements mis à jour' },
+    bulkUpdatePartial: 'Enregistrements mis à jour : {done} ; échecs : {failed}. Erreur : {error}',
+  },
+
+  kanban: {
+    needsPicklist: 'Un tableau Kanban doit être regroupé par une liste de sélection ; « {field} » n’en est pas une.',
+    noValue: 'Sans {field}',
+    truncated: 'Affichage des {shown} premiers enregistrements sur {total}. Ajoutez des filtres pour affiner le tableau.',
+    boardLabel: '{plural} par {field}',
+    move: 'Déplacer {name}',
+    dropHere: 'Déposez les cartes ici',
+  },
+
+  calendar: {
+    needsDateField: 'Une vue Calendrier nécessite un champ de date ; « {field} » n’en est pas un.',
+    byField: 'par {field}',
+    previousMonth: 'Mois précédent',
+    nextMonth: 'Mois suivant',
+    gridLabel: 'Calendrier',
+    dayItems: { one: '{date} : {count} élément', other: '{date} : {count} éléments' },
+    newOn: 'Créer un enregistrement de type {label} le {date}',
+    more: { one: '+{count} autre', other: '+{count} autres' },
+    truncated: 'Affichage des {shown} premiers enregistrements sur {total} dans cette plage.',
+  },
+
+  timeline: {
+    notConfigured: 'Aucune date de début/fin n’est configurée pour les chronologies de l’objet {label}.',
+    start: 'Début',
+    end: 'Fin',
+    range: '{start} – {end}',
+    earlier: 'Plus tôt',
+    later: 'Plus tard',
+    emptyTitle: 'Aucun résultat pour les {plural} sur cette période',
+    emptyBody: 'Utilisez les flèches pour consulter d’autres mois.',
+    barTitle: '{name} : {start} – {end}',
+    barTitleNoEnd: '{name} : {start} – sans date de fin',
+    truncated: 'Affichage des {shown} premiers enregistrements sur {total} sur cette période.',
+  },
+} satisfies Translation['views'];

@@ -9,14 +9,15 @@ import { useConfirm, useToast } from '../../components/feedback.tsx';
 import { completeFilter, describeFilter, FilterEditor } from '../../components/FilterEditor.tsx';
 import { InlineToggle } from '../../components/pickers.tsx';
 import { Button, EmptyState, ErrorBanner, FormField, IconButton, Loading, Modal, ObjectTile, PageHeader, Toggle } from '../../components/ui.tsx';
+import { inSentence, type MessageKey, t } from '../../i18n/index.ts';
 import { fieldDef, formatDateTime, relativeTime } from '../../lib/format.ts';
 import { useObjects } from '../../lib/hooks.ts';
 
-const TRIGGERS: { id: TriggerType; label: string; short: string }[] = [
-  { id: 'created', label: 'A record is created', short: 'Created' },
-  { id: 'updated', label: 'A record is updated', short: 'Updated' },
-  { id: 'saved', label: 'A record is created or updated', short: 'Created or updated' },
-  { id: 'deleted', label: 'A record is deleted', short: 'Deleted' },
+const TRIGGERS: { id: TriggerType; label: MessageKey; short: MessageKey }[] = [
+  { id: 'created', label: 'setupAutomations.triggers.created.label', short: 'setupAutomations.triggers.created.short' },
+  { id: 'updated', label: 'setupAutomations.triggers.updated.label', short: 'setupAutomations.triggers.updated.short' },
+  { id: 'saved', label: 'setupAutomations.triggers.saved.label', short: 'setupAutomations.triggers.saved.short' },
+  { id: 'deleted', label: 'setupAutomations.triggers.deleted.label', short: 'setupAutomations.triggers.deleted.short' },
 ];
 const DELETE_TYPES: AutomationActionType[] = ['update_related', 'create_record', 'notify', 'webhook'];
 const MAX_WATCH = 20;
@@ -28,19 +29,20 @@ function useAutomations() {
 }
 
 function triggerSummary(a: AutomationDef, def: ObjectDef | undefined): string {
-  const t = TRIGGERS.find((x) => x.id === a.trigger.type)?.short ?? a.trigger.type;
+  const short = TRIGGERS.find((x) => x.id === a.trigger.type)?.short;
+  const trigger = short ? t(short) : a.trigger.type;
   const w = a.trigger.watchFields ?? [];
-  if (!w.length || !watchable(a.trigger.type)) return t;
-  return `${t} · when ${w.map((f) => (def ? (fieldDef(def, f)?.label ?? f) : f)).join(', ')} change${w.length === 1 ? 's' : ''}`;
+  if (!w.length || !watchable(a.trigger.type)) return trigger;
+  return t('setupAutomations.triggerSummary', { count: w.length, trigger, fields: w.map((f) => (def ? (fieldDef(def, f)?.label ?? f) : f)).join(', ') });
 }
 
 function WatchFields({ def, value, onChange }: { def: ObjectDef; value: string[]; onChange: (v: string[]) => void }) {
-  const fields = [...def.fields.map((f) => ({ apiName: f.apiName, label: f.label })), ...(def.fields.some((f) => f.apiName === 'owner_id') ? [] : [{ apiName: 'owner_id', label: 'Owner' }])];
+  const fields = [...def.fields.map((f) => ({ apiName: f.apiName, label: f.label })), ...(def.fields.some((f) => f.apiName === 'owner_id') ? [] : [{ apiName: 'owner_id', label: t('common.owner') }])];
   const full = value.length >= MAX_WATCH;
   return (
     <fieldset>
-      <legend className="label">Only when these fields change</legend>
-      <p className="mb-2 text-xs text-slate-500">{value.length ? `${value.length} selected — record creations still run for “created or updated”.` : 'Leave all unchecked to run on any change.'}</p>
+      <legend className="label">{t('setupAutomations.watch.legend')}</legend>
+      <p className="mb-2 text-xs text-slate-500">{value.length ? t('setupAutomations.watch.selected', { count: value.length }) : t('setupAutomations.watch.none')}</p>
       <div className="grid max-h-44 gap-x-4 gap-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2 sm:grid-cols-2 lg:grid-cols-3">
         {fields.map((f) => {
           const on = value.includes(f.apiName);
@@ -79,13 +81,13 @@ function AutomationForm({ automation, objects, defaultObject, onClose }: { autom
   const selfUpdated = watchable(trigger) ? actions.flatMap((a) => (a.type === 'update_record' ? Object.keys(a.fields ?? {}).filter(Boolean) : [])) : [];
   const mayRetrigger = selfUpdated.length > 0 && (!watch.length || selfUpdated.some((f) => watch.includes(f)));
   const problem = !name.trim()
-    ? 'Enter a name.'
+    ? t('setupAutomations.form.problems.enterName')
     : !def
-      ? 'Choose an object.'
+      ? t('setupAutomations.form.problems.chooseObject')
       : !actions.length
-        ? 'Add at least one action.'
+        ? t('setupAutomations.form.problems.addAction')
         : afterDelete >= 0
-          ? `Action ${afterDelete + 1} (${ACTION_LABELS[actions[afterDelete]!.type]}) can’t run after a record is deleted.`
+          ? t('setupAutomations.form.problems.actionAfterDelete', { n: afterDelete + 1, action: ACTION_LABELS[actions[afterDelete]!.type] })
           : actionsProblem(actions);
 
   const save = useMutation({
@@ -102,7 +104,7 @@ function AutomationForm({ automation, objects, defaultObject, onClose }: { autom
       return isNew ? api.post<AutomationDef>('/api/automations', body) : api.patch<AutomationDef>(`/api/automations/${automation!.id}`, body);
     },
     onSuccess: async (saved) => {
-      toast.success(isNew ? `${saved.name} created` : `${saved.name} saved`);
+      toast.success(isNew ? t('setupAutomations.toasts.created', { name: saved.name }) : t('setupAutomations.toasts.saved', { name: saved.name }));
       onClose();
       await qc.invalidateQueries({ queryKey: ['automations'] });
     },
@@ -111,7 +113,7 @@ function AutomationForm({ automation, objects, defaultObject, onClose }: { autom
   const changeObject = async (next: string) => {
     if (next === object) return;
     if (actions.length || conditions?.rules.length || watch.length) {
-      const ok = await confirm({ title: 'Change the object?', message: 'The conditions, watched fields and actions refer to the current object and will be cleared.', confirmLabel: 'Change object' });
+      const ok = await confirm({ title: t('setupAutomations.form.changeObjectTitle'), message: t('setupAutomations.form.changeObjectMessage'), confirmLabel: t('setupAutomations.form.changeObjectConfirm') });
       if (!ok) return;
     }
     setObject(next);
@@ -124,14 +126,14 @@ function AutomationForm({ automation, objects, defaultObject, onClose }: { autom
     <Modal
       open
       onClose={onClose}
-      title={isNew ? 'New automation' : `Edit ${automation?.name}`}
+      title={isNew ? t('setupAutomations.new') : t('setupAutomations.edit', { name: automation?.name ?? '' })}
       size="xl"
       footer={
         <>
           {problem && <span className="mr-auto text-xs text-slate-500">{problem}</span>}
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
           <Button variant="primary" type="submit" form={formId} disabled={!!problem} loading={save.isPending}>
-            {isNew ? 'Create automation' : 'Save automation'}
+            {isNew ? t('setupAutomations.form.create') : t('setupAutomations.form.save')}
           </Button>
         </>
       }
@@ -146,13 +148,13 @@ function AutomationForm({ automation, objects, defaultObject, onClose }: { autom
       >
         <ErrorBanner error={save.error} />
         <section className="grid gap-4 sm:grid-cols-2">
-          <FormField label="Name" required htmlFor={ids.name}>
-            <input id={ids.name} className="input" value={name} maxLength={120} placeholder="Notify owner of large deals" onChange={(e) => setName(e.target.value)} />
+          <FormField label={t('common.name')} required htmlFor={ids.name}>
+            <input id={ids.name} className="input" value={name} maxLength={120} placeholder={t('setupAutomations.form.namePlaceholder')} onChange={(e) => setName(e.target.value)} />
           </FormField>
           {isNew ? (
-            <FormField label="Object" required htmlFor={ids.object}>
+            <FormField label={t('common.object')} required htmlFor={ids.object}>
               <select id={ids.object} className="input" value={object} onChange={(e) => void changeObject(e.target.value)}>
-                {!def && <option value="">Choose an object…</option>}
+                {!def && <option value="">{t('setupAutomations.chooseObject')}</option>}
                 {sorted.map((o) => (
                   <option key={o.apiName} value={o.apiName}>
                     {o.label}
@@ -161,14 +163,14 @@ function AutomationForm({ automation, objects, defaultObject, onClose }: { autom
               </select>
             </FormField>
           ) : (
-            <FormField label="Object" help="The object of an existing automation can’t be changed.">
+            <FormField label={t('common.object')} help={t('setupAutomations.form.objectFixed')}>
               <div className="input flex items-center gap-2 bg-slate-50 text-slate-700">
                 {def && <ObjectTile icon={def.icon} color={def.color} size="sm" />}
                 {def?.label ?? object}
               </div>
             </FormField>
           )}
-          <FormField label="Description" htmlFor={ids.desc} className="sm:col-span-2">
+          <FormField label={t('common.description')} htmlFor={ids.desc} className="sm:col-span-2">
             <textarea id={ids.desc} className="input" rows={2} maxLength={1000} value={description} onChange={(e) => setDescription(e.target.value)} />
           </FormField>
         </section>
@@ -176,12 +178,12 @@ function AutomationForm({ automation, objects, defaultObject, onClose }: { autom
         {def && (
           <>
             <section className="space-y-3 rounded-xl border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-800">1. When</h3>
-              <FormField label="Trigger" required htmlFor={ids.trigger} className="sm:w-80">
+              <h3 className="text-sm font-semibold text-slate-800">{t('setupAutomations.form.when')}</h3>
+              <FormField label={t('setupAutomations.trigger')} required htmlFor={ids.trigger} className="sm:w-80">
                 <select id={ids.trigger} className="input" value={trigger} onChange={(e) => setTrigger(e.target.value as TriggerType)}>
-                  {TRIGGERS.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.label.replace('A record', `A ${def.label.toLowerCase()}`)}
+                  {TRIGGERS.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {t(x.label, { object: inSentence(def.label) })}
                     </option>
                   ))}
                 </select>
@@ -190,40 +192,40 @@ function AutomationForm({ automation, objects, defaultObject, onClose }: { autom
               {trigger === 'deleted' && (
                 <p className="flex items-start gap-1.5 text-xs text-slate-500">
                   <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                  The record is already gone when the automation runs, so it can only notify, call webhooks, create records or update related records.
+                  {t('setupAutomations.form.deletedNote')}
                 </p>
               )}
             </section>
 
             <section className="space-y-2 rounded-xl border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-800">2. Only if (optional)</h3>
+              <h3 className="text-sm font-semibold text-slate-800">{t('setupAutomations.form.onlyIf')}</h3>
               <p className="text-xs text-slate-500">
-                {trigger === 'deleted' ? 'Conditions are checked against the record as it was before deletion.' : 'Conditions are checked against the record after the change.'} “Current user” means the person who made the change.
+                {trigger === 'deleted' ? t('setupAutomations.form.conditionsBeforeDelete') : t('setupAutomations.form.conditionsAfterChange')} {t('setupAutomations.form.currentUserNote')}
               </p>
               <FilterEditor key={object} def={def} value={conditions} onChange={setConditions} />
             </section>
 
             <section className="space-y-3 rounded-xl border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-800">3. Then</h3>
+              <h3 className="text-sm font-semibold text-slate-800">{t('setupAutomations.form.then')}</h3>
               <ActionsEditor
                 key={object}
                 object={def}
                 value={actions}
                 onChange={setActions}
                 types={trigger === 'deleted' ? DELETE_TYPES : undefined}
-                emptyText="Add the first action this automation should perform."
+                emptyText={t('setupAutomations.form.actionsEmpty')}
               />
               {mayRetrigger && (
                 <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                  This automation updates the record it runs on, and that update can trigger it again. Repeats stop once a run changes nothing, or after 4 levels. To run it once per change, watch specific fields (not the ones it sets) or add a condition.
+                  {t('setupAutomations.form.retriggerWarning')}
                 </p>
               )}
             </section>
           </>
         )}
 
-        <Toggle checked={active} onChange={setActive} label="Active" />
+        <Toggle checked={active} onChange={setActive} label={t('common.active')} />
       </form>
     </Modal>
   );
@@ -247,14 +249,14 @@ export default function Automations() {
     onMutate: ({ a, active }) => {
       qc.setQueryData<AutomationDef[]>(['automations'], (old) => old?.map((x) => (x.id === a.id ? { ...x, active } : x)));
     },
-    onSuccess: (_r, { a, active }) => toast.success(`${a.name} ${active ? 'activated' : 'deactivated'}`),
+    onSuccess: (_r, { a, active }) => toast.success(active ? t('setupAutomations.toasts.activated', { name: a.name }) : t('setupAutomations.toasts.deactivated', { name: a.name })),
     onError: (e) => toast.error(errorMessage(e)),
     onSettled: () => qc.invalidateQueries({ queryKey: ['automations'] }),
   });
   const remove = useMutation({
     mutationFn: (a: AutomationDef) => api.del(`/api/automations/${a.id}`),
     onSuccess: async (_r, a) => {
-      toast.success(`${a.name} deleted`);
+      toast.success(t('setupAutomations.toasts.deleted', { name: a.name }));
       await qc.invalidateQueries({ queryKey: ['automations'] });
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -269,15 +271,15 @@ export default function Automations() {
   return (
     <div className="mx-auto max-w-7xl p-6">
       <PageHeader
-        title="Automations"
-        subtitle="Run actions automatically when records are created, updated or deleted."
+        title={t('setupAutomations.title')}
+        subtitle={t('setupAutomations.subtitle')}
         actions={
           <>
             <Link to="/setup/runs" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-700 shadow-xs hover:bg-slate-50">
-              <History className="size-4" aria-hidden /> Run history
+              <History className="size-4" aria-hidden /> {t('setupAutomations.runHistory')}
             </Link>
             <Button variant="primary" icon={Plus} disabled={!objects.data} onClick={() => setEditing('new')}>
-              New automation
+              {t('setupAutomations.new')}
             </Button>
           </>
         }
@@ -286,10 +288,10 @@ export default function Automations() {
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-3">
           <div className="relative w-full max-w-xs">
             <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-slate-400" aria-hidden />
-            <input type="search" aria-label="Search automations" placeholder="Search automations…" className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input type="search" aria-label={t('setupAutomations.list.searchLabel')} placeholder={t('setupAutomations.list.searchPlaceholder')} className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <select
-            aria-label="Filter by object"
+            aria-label={t('setupAutomations.list.filterByObject')}
             className="input w-auto"
             value={objectFilter}
             onChange={(e) => {
@@ -299,7 +301,7 @@ export default function Automations() {
               setParams(next, { replace: true });
             }}
           >
-            <option value="">All objects</option>
+            <option value="">{t('setupAutomations.list.allObjects')}</option>
             {objectFilter && !usedObjects.some((o) => o.api === objectFilter) && <option value={objectFilter}>{objectOf(objectFilter)?.label ?? objectFilter}</option>}
             {usedObjects.map((o) => (
               <option key={o.api} value={o.api}>
@@ -317,39 +319,39 @@ export default function Automations() {
         ) : list.length === 0 ? (
           <EmptyState
             icon={Workflow}
-            title={term || objectFilter ? 'No automations match' : 'No automations yet'}
+            title={term || objectFilter ? t('setupAutomations.list.noMatch') : t('setupAutomations.list.empty')}
             action={
               !term && !objectFilter ? (
                 <Button variant="primary" icon={Plus} disabled={!objects.data} onClick={() => setEditing('new')}>
-                  Create your first automation
+                  {t('setupAutomations.list.createFirst')}
                 </Button>
               ) : undefined
             }
           >
-            {!term && !objectFilter && 'Automations update fields, create follow-up records, notify people, call webhooks or hand work to AI agents.'}
+            {!term && !objectFilter && t('setupAutomations.list.emptyText')}
           </EmptyState>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50/70 text-left text-xs font-semibold text-slate-500 uppercase">
                 <tr>
-                  <th className="px-4 py-2.5">Name</th>
-                  <th className="px-4 py-2.5">Object</th>
-                  <th className="px-4 py-2.5">Trigger</th>
-                  <th className="px-4 py-2.5">Conditions</th>
-                  <th className="px-4 py-2.5">Actions</th>
-                  <th className="px-4 py-2.5 text-right">Runs</th>
-                  <th className="px-4 py-2.5">Last run</th>
-                  <th className="px-4 py-2.5">Active</th>
+                  <th className="px-4 py-2.5">{t('common.name')}</th>
+                  <th className="px-4 py-2.5">{t('common.object')}</th>
+                  <th className="px-4 py-2.5">{t('setupAutomations.trigger')}</th>
+                  <th className="px-4 py-2.5">{t('setupAutomations.list.conditions')}</th>
+                  <th className="px-4 py-2.5">{t('setupAutomations.list.actions')}</th>
+                  <th className="px-4 py-2.5 text-right">{t('setupAutomations.list.runs')}</th>
+                  <th className="px-4 py-2.5">{t('setupAutomations.list.lastRun')}</th>
+                  <th className="px-4 py-2.5">{t('common.active')}</th>
                   <th className="px-4 py-2.5">
-                    <span className="sr-only">Row actions</span>
+                    <span className="sr-only">{t('setupAutomations.list.rowActions')}</span>
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {list.map((a) => {
                   const def = objectOf(a.object);
-                  const conditions = def ? describeFilter(def, a.conditions) : a.conditions?.rules.length ? `${a.conditions.rules.length} conditions` : 'No conditions';
+                  const conditions = def ? describeFilter(def, a.conditions) : a.conditions?.rules.length ? t('setupAutomations.list.conditionCount', { count: a.conditions.rules.length }) : t('setupAutomations.list.noConditions');
                   const actionNames = a.actions.map((x) => ACTION_LABELS[x.type] ?? x.type);
                   return (
                     <tr key={a.id} className="align-top hover:bg-slate-50/70">
@@ -378,27 +380,27 @@ export default function Automations() {
                       </td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap tabular-nums">
                         <span className="text-slate-700">{a.stats?.runs ?? 0}</span>
-                        {!!a.stats?.failures && <span className="block text-xs text-rose-600">{a.stats.failures} failed</span>}
+                        {!!a.stats?.failures && <span className="block text-xs text-rose-600">{t('setupAutomations.list.failedCount', { count: a.stats.failures })}</span>}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap text-slate-500">
-                        {a.stats?.lastRunAt ? <span title={formatDateTime(a.stats.lastRunAt)}>{relativeTime(a.stats.lastRunAt)}</span> : 'Never'}
+                        {a.stats?.lastRunAt ? <span title={formatDateTime(a.stats.lastRunAt)}>{relativeTime(a.stats.lastRunAt)}</span> : t('setupAutomations.list.never')}
                       </td>
                       <td className="px-4 py-2.5">
-                        <InlineToggle checked={a.active} label={`${a.name} active`} disabled={toggle.isPending} onChange={(active) => toggle.mutate({ a, active })} />
+                        <InlineToggle checked={a.active} label={t('setupAutomations.list.activeLabel', { name: a.name })} disabled={toggle.isPending} onChange={(active) => toggle.mutate({ a, active })} />
                       </td>
                       <td className="px-4 py-2.5">
                         <div className="flex justify-end gap-0.5">
-                          <Link to={`/setup/runs?automationId=${encodeURIComponent(a.id)}`} aria-label={`Run history of ${a.name}`} title="Run history" className="inline-flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900">
+                          <Link to={`/setup/runs?automationId=${encodeURIComponent(a.id)}`} aria-label={t('setupAutomations.runHistoryOf', { name: a.name })} title={t('setupAutomations.runHistory')} className="inline-flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900">
                             <History className="size-4" aria-hidden />
                           </Link>
-                          <IconButton icon={Pencil} label={`Edit ${a.name}`} disabled={!objects.data} onClick={() => setEditing(a)} />
+                          <IconButton icon={Pencil} label={t('setupAutomations.edit', { name: a.name })} disabled={!objects.data} onClick={() => setEditing(a)} />
                           <IconButton
                             icon={Trash}
-                            label={`Delete ${a.name}`}
+                            label={t('setupAutomations.list.delete', { name: a.name })}
                             className="hover:text-rose-600"
                             disabled={remove.isPending}
                             onClick={async () => {
-                              const ok = await confirm({ title: `Delete ${a.name}?`, message: 'The automation stops running and is permanently deleted, together with its run history.', confirmLabel: 'Delete automation', danger: true });
+                              const ok = await confirm({ title: t('setupAutomations.list.deleteTitle', { name: a.name }), message: t('setupAutomations.list.deleteMessage'), confirmLabel: t('setupAutomations.list.deleteConfirm'), danger: true });
                               if (ok) remove.mutate(a);
                             }}
                           />

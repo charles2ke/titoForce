@@ -1,10 +1,12 @@
 import type { FieldDef, ListViewDef, ObjectDef } from '@titoforce/shared';
 import type { FastifyInstance } from 'fastify';
+import { RECALC_FIELD_KEYS, RECALC_OBJECT_KEYS } from '../platform/metadata.ts';
 import { assertSetup, canViewSensitive, objectPermission, type Principal } from '../platform/principal.ts';
+import { checkRole } from '../platform/users.ts';
 import type { ListViewInput } from '../platform/views.ts';
 import type { Services } from '../services.ts';
 import { badRequest, conflict, notFound } from '../util.ts';
-import { auth, intParam, params, parse, parsePatch, principalOf, query } from './http.ts';
+import { auth, intParam, localeOf, params, parse, parsePatch, principalOf, query } from './http.ts';
 import * as schemas from './schemas.ts';
 
 /** Object metadata as a user sees it: sensitive field definitions are hidden from roles that cannot see their values. */
@@ -14,26 +16,26 @@ function visibleObject(p: Principal, def: ObjectDef): ObjectDef {
 
 const nullsToUndefined = <T extends object>(o: T): T => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v ?? undefined])) as T;
 
-const RECALC_OBJECT_KEYS = ['nameField', 'nameTemplate'];
-const RECALC_FIELD_KEYS = ['formula', 'formulaType', 'rollup', 'precision'];
 const ROLE_ID = /^[a-z][a-z0-9_]{1,39}$/;
 
 export function platformRoutes(app: FastifyInstance, s: Services): void {
   // ---------- metadata (objects & fields) ----------
 
+  // Labels are translated into the requester's language unless `?raw=1` (Setup edits the English originals).
   app.get('/api/objects', async (req) => {
     const p = principalOf(req);
+    const tr = await s.translations.translator(localeOf(req));
     return s.metadata
       .list()
       .filter((o) => objectPermission(p, o.apiName).read !== 'none')
-      .map((o) => visibleObject(p, o));
+      .map((o) => tr.object(visibleObject(p, o)));
   });
 
   app.get('/api/objects/:api', async (req) => {
     const p = principalOf(req);
     const def = s.metadata.get(params(req).api!);
     if (!def || objectPermission(p, def.apiName).read === 'none') throw notFound('Object not found');
-    return visibleObject(p, def);
+    return (await s.translations.translator(localeOf(req))).object(visibleObject(p, def));
   });
 
   app.post('/api/objects', async (req, reply) => {
@@ -107,7 +109,10 @@ export function platformRoutes(app: FastifyInstance, s: Services): void {
 
   // ---------- apps (navigation) ----------
 
-  app.get('/api/apps', async (req) => s.apps.list(principalOf(req)));
+  app.get('/api/apps', async (req) => {
+    const tr = await s.translations.translator(localeOf(req));
+    return (await s.apps.list(principalOf(req))).map((a) => tr.app(a));
+  });
 
   app.post('/api/apps', async (req, reply) => {
     const p = principalOf(req);
@@ -171,12 +176,9 @@ export function platformRoutes(app: FastifyInstance, s: Services): void {
     const id = params(req).id!;
     if (!ROLE_ID.test(id)) throw badRequest('Role ids use lowercase letters, numbers and underscores');
     const body = parse(schemas.role, req.body);
-    for (const object of Object.keys(body.permissions.objects)) {
-      if (object !== '*' && !s.metadata.get(object)) throw badRequest(`Unknown object ${object}`);
-    }
     // The administrator role always keeps setup access so the org cannot be locked out.
     if (id === 'admin') body.permissions.setup = true;
-    return s.users.upsertRole({ id, ...body });
+    return s.users.upsertRole(checkRole(s.metadata, { id, ...body }));
   });
 
   app.delete('/api/roles/:id', async (req) => {

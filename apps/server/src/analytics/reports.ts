@@ -80,7 +80,7 @@ export class AnalyticsService {
     }
   }
 
-  async aggregate(principal: Principal, object: string, spec: AggregateSpec): Promise<ReportResult> {
+  async aggregate(principal: Principal, object: string, spec: AggregateSpec, deferLabelLimit = false): Promise<ReportResult> {
     const def = this.metadata.require(object);
     this.validateSpec(object, spec);
     const where = this.records.buildWhere(principal, def, spec.filters ?? null);
@@ -140,7 +140,7 @@ export class AnalyticsService {
       out.sort((a, b) => (order.get(a.key ?? '') ?? 999) - (order.get(b.key ?? '') ?? 999));
     } else if (isDate) out.sort((a, b) => (a.key ?? '').localeCompare(b.key ?? ''));
     else out.sort((a, b) => b.value - a.value);
-    if (spec.limit && spec.limit > 0) out = out.slice(0, spec.limit);
+    if (spec.limit && spec.limit > 0 && !(deferLabelLimit && sort === 'label')) out = out.slice(0, spec.limit);
     return { rows: out, total, metricLabel, format };
   }
 
@@ -161,7 +161,7 @@ export class AnalyticsService {
     return this.toReport(row);
   }
 
-  private validateReport(input: ReportInput): ReportInput {
+  validateReport(input: ReportInput): ReportInput {
     if (!input.name?.trim()) throw badRequest('Report name is required');
     if (!CHARTS.includes(input.chart)) throw badRequest('Invalid chart type');
     this.validateSpec(input.object, input);
@@ -206,9 +206,9 @@ export class AnalyticsService {
     await this.db.run('DELETE FROM reports WHERE id = ?', [id]);
   }
 
-  async runReport(principal: Principal, idOrDef: string | ReportDef): Promise<{ report: ReportDef; result: ReportResult }> {
+  async runReport(principal: Principal, idOrDef: string | ReportDef, deferLabelLimit = false): Promise<{ report: ReportDef; result: ReportResult }> {
     const report = typeof idOrDef === 'string' ? await this.getReport(idOrDef) : idOrDef;
-    return { report, result: await this.aggregate(principal, report.object, report) };
+    return { report, result: await this.aggregate(principal, report.object, report, deferLabelLimit) };
   }
 
   // ---------- dashboards ----------
@@ -228,7 +228,7 @@ export class AnalyticsService {
     return this.toDashboard(row);
   }
 
-  private async validateDashboard(input: DashboardInput): Promise<DashboardInput> {
+  async validateDashboard(input: DashboardInput): Promise<DashboardInput> {
     if (!input.name?.trim()) throw badRequest('Dashboard name is required');
     if (!Array.isArray(input.widgets) || input.widgets.length > 24) throw badRequest('Dashboards have up to 24 widgets');
     const ids = new Set((await this.listReports()).map((r) => r.id));
@@ -270,7 +270,7 @@ export class AnalyticsService {
   }
 
   /** Runs every widget's report; widgets the user cannot access report an error instead of failing the dashboard. */
-  async renderDashboard(principal: Principal, id: string): Promise<{ dashboard: DashboardDef; widgets: RenderedWidget[] }> {
+  async renderDashboard(principal: Principal, id: string, deferLabelLimit = false): Promise<{ dashboard: DashboardDef; widgets: RenderedWidget[] }> {
     const dashboard = await this.getDashboard(id);
     const reports = new Map((await this.listReports()).map((r) => [r.id, r]));
     const widgets: RenderedWidget[] = [];
@@ -281,7 +281,7 @@ export class AnalyticsService {
         continue;
       }
       try {
-        widgets.push({ ...w, report, result: await this.aggregate(principal, report.object, report), error: null });
+        widgets.push({ ...w, report, result: await this.aggregate(principal, report.object, report, deferLabelLimit), error: null });
       } catch (err) {
         if (!(err instanceof AppError)) throw err;
         widgets.push({ ...w, report, result: null, error: err.message });

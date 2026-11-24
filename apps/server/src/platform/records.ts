@@ -1,5 +1,6 @@
 import {
   type CrmRecord,
+  type EditConflictDetails,
   evaluateExpression,
   type FieldDef,
   type FilterGroup,
@@ -9,6 +10,7 @@ import {
   type RecordData,
   type RecordQuery,
   type RefMap,
+  type RelatedListOption,
   renderTemplate,
   type SearchResultGroup,
   stringify,
@@ -19,6 +21,7 @@ import {
 import { type Db, jsonText, parseJson, type SqlParam } from '../db/database.ts';
 import { AppError, badRequest, chunk, clamp, forbidden, newId, notFound, nowIso, placeholders, truncate } from '../util.ts';
 import type { EventBus } from './events.ts';
+import { relatedListOptions } from './layouts.ts';
 import { isComputedField, type MetadataService } from './metadata.ts';
 import {
   assertCanCreate,
@@ -199,6 +202,11 @@ export interface WriteOptions {
   allowDuplicates?: boolean;
   /** Backdated created/updated timestamp (seeding only). */
   timestamp?: string;
+  /**
+   * The `updatedAt` of the version the edit started from. Fields someone else changed since then are not overwritten:
+   * the update fails with 409 `edit_conflict` (details: EditConflictDetails). Changes to other fields are kept.
+   */
+  expectedUpdatedAt?: string;
 }
 
 export interface RelatedList {
@@ -354,32 +362,25 @@ export class RecordService {
   }
 
   /** Child records that reference this record (related lists). */
-  async related(principal: Principal, object: string, id: string): Promise<{ lists: RelatedList[]; refs: RefMap }> {
-    const def = this.metadata.require(object);
+  /** Child records for a record page's related lists (by default every lookup to the object, in field order). */
+  async related(principal: Principal, object: string, id: string, lists: RelatedListOption[] = relatedListOptions(this.metadata, object)): Promise<{ lists: RelatedList[]; refs: RefMap }> {
+    this.metadata.require(object);
     await this.get(principal, object, id);
-    const lists: RelatedList[] = [];
+    const out: RelatedList[] = [];
     const refs: RefMap = {};
-    const refsFrom = this.metadata.referencingFields(object);
-    for (const { object: child, field } of refsFrom) {
-      if (child.apiName === 'activity' && field.apiName === 'related_to') continue; // shown on the timeline
-      if (objectPermission(principal, child.apiName).read === 'none') continue;
+    for (const list of lists) {
+      const field = this.metadata.get(list.object)?.fields.find((f) => f.apiName === list.field);
+      if (!field || objectPermission(principal, list.object).read === 'none') continue;
       if (!canViewSensitive(principal) && field.sensitive) continue;
-      const res = await this.query(principal, child.apiName, {
+      const res = await this.query(principal, list.object, {
         filters: { match: 'all', rules: [{ field: field.apiName, op: 'eq', value: id }] },
         pageSize: 10,
       });
       if (field.referenceTo === '*' && res.total === 0) continue;
-      const ambiguous = refsFrom.filter((r) => r.object.apiName === child.apiName).length > 1 || child.apiName === def.apiName;
-      lists.push({
-        object: child.apiName,
-        field: field.apiName,
-        label: ambiguous ? `${child.pluralLabel} (${field.label})` : child.pluralLabel,
-        total: res.total,
-        records: res.records,
-      });
+      out.push({ object: list.object, field: list.field, label: list.label, total: res.total, records: res.records });
       Object.assign(refs, res.refs);
     }
-    return { lists, refs };
+    return { lists: out, refs };
   }
 
   /** Activities, field history and agent runs for a record, newest first. */
@@ -654,7 +655,8 @@ export class RecordService {
     if (!row || !Number(row.active)) throw badRequest('Owner must be an active user', { field: 'owner_id' });
   }
 
-  private async writeHistory(tx: Db, rec: CrmRecord, event: 'created' | 'updated' | 'deleted', changes: FieldChange[] | null, principal: Principal): Promise<void> {
+  /** `at` is when the change happened: for an edit, the record's new updatedAt, which assertNoEditConflict relies on. */
+  private async writeHistory(tx: Db, rec: CrmRecord, event: 'created' | 'updated' | 'deleted', changes: FieldChange[] | null, principal: Principal, at: string): Promise<void> {
     await tx.run(
       'INSERT INTO record_history (id, record_id, object_api_name, event, changes, actor_type, actor_id, actor_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
@@ -666,7 +668,7 @@ export class RecordService {
         principal.type === 'public' ? 'system' : principal.type,
         principal.agentId ?? principal.userId,
         principal.name,
-        event === 'created' ? rec.createdAt : nowIso(),
+        at,
       ],
     );
   }
@@ -704,7 +706,7 @@ export class RecordService {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, object, name, owner, JSON.stringify(fields), this.searchText(def, name, fields), now, now, principal.userId, principal.userId],
       );
-      await this.writeHistory(tx, record, 'created', null, principal);
+      await this.writeHistory(tx, record, 'created', null, principal, record.createdAt);
       await this.refreshRollups(tx, object, [fields]);
     });
 
@@ -737,11 +739,11 @@ export class RecordService {
   ): Promise<CrmRecord | undefined> {
     const def = this.metadata.require(object);
     // Form edits and counter increments must both compare their complete snapshot:
-    // otherwise a stale full-record write could undo either kind of update.
-    const snapshot = object === 'web_form'
-      ? await this.db.get<RecordRow>(`SELECT ${COLUMNS} FROM records WHERE id = ?`, [id])
-      : undefined;
-    const current = object === 'web_form' ? (snapshot ? rowToRecord(snapshot) : undefined) : await this.getRaw(id);
+    // otherwise a stale full-record write could undo either kind of update. Edits checked for conflicts do the same,
+    // so nothing can change between the check and the write.
+    const guarded = object === 'web_form' || !!opts.expectedUpdatedAt;
+    const snapshot = guarded ? await this.db.get<RecordRow>(`SELECT ${COLUMNS} FROM records WHERE id = ?`, [id]) : undefined;
+    const current = guarded ? (snapshot ? rowToRecord(snapshot) : undefined) : await this.getRaw(id);
     if (!current || current.object !== object || !canRead(principal, object, current.ownerId)) throw notFound(`${def.label} not found`);
     assertCanEdit(principal, object, current.ownerId);
     const effectiveInput = incrementSubmissions ? { ...input, submissions: Number(current.fields.submissions ?? 0) + 1 } : input;
@@ -752,6 +754,11 @@ export class RecordService {
     }
     const changedInputs: RecordData = {};
     for (const [k, v] of Object.entries(values)) if (!same(current.fields[k], v)) changedInputs[k] = v;
+    if (opts.expectedUpdatedAt && opts.expectedUpdatedAt !== current.updatedAt) {
+      const edited = Object.keys(changedInputs);
+      if (ownerId !== undefined && ownerId !== current.ownerId) edited.push('owner_id');
+      await this.assertNoEditConflict(principal, def, current, opts.expectedUpdatedAt, edited);
+    }
     await this.validateReferences(def, changedInputs, id);
 
     let newOwner = current.ownerId;
@@ -761,7 +768,8 @@ export class RecordService {
       newOwner = ownerId;
     }
     const merged: RecordData = { ...current.fields, ...values };
-    const now = opts.timestamp ?? nowIso();
+    // Strictly after the previous version, so updatedAt identifies a version (see expectedUpdatedAt).
+    const now = opts.timestamp ?? new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1 || 0)).toISOString();
     const { fields, name } = this.finalize(def, merged, { id, ownerId: newOwner, createdAt: current.createdAt, updatedAt: now });
 
     const changed = new Set<string>();
@@ -797,17 +805,43 @@ export class RecordService {
         ...(snapshot ? [snapshot.object_api_name, snapshot.name, snapshot.owner_id, typeof snapshot.data === 'string' ? snapshot.data : JSON.stringify(snapshot.data), snapshot.updated_at, snapshot.updated_by] : []),
       ]);
       if (!result.changes) return false;
-      if (history.length) await this.writeHistory(tx, record, 'updated', history, principal);
+      if (history.length) await this.writeHistory(tx, record, 'updated', history, principal, record.updatedAt);
       await this.refreshRollups(tx, object, [current.fields, fields]);
       return true;
     });
 
     if (!written) {
+      // The record changed since it was read: start again from the new version (or report it deleted).
       if (snapshot) return undefined;
       throw notFound(`${def.label} not found`);
     }
     if (!opts.silent) await this.events.emit({ type: 'updated', object, record, previous: current, changed: [...changed], principal });
     return this.redact(principal, (await this.getRaw(id)) ?? record);
+  }
+
+  /** Fails if someone else changed any of `edited` (field API names, or owner_id) after `since`. */
+  private async assertNoEditConflict(principal: Principal, def: ObjectDef, current: CrmRecord, since: string, edited: string[]): Promise<void> {
+    if (!edited.length) return;
+    const rows = await this.db.all<{ changes: string | null; actor_name: string | null; created_at: string }>(
+      "SELECT changes, actor_name, created_at FROM record_history WHERE record_id = ? AND event = 'updated' AND created_at > ? ORDER BY created_at",
+      [current.id, since],
+    );
+    const lastChange = new Map<string, { by: string | null; at: string }>();
+    for (const row of rows) for (const c of parseJson<FieldChange[]>(row.changes, [])) lastChange.set(c.field, { by: row.actor_name, at: row.created_at });
+    const conflicts = edited.filter((f) => lastChange.has(f));
+    if (!conflicts.length) return;
+    const visible = this.redact(principal, current);
+    const details: EditConflictDetails = {
+      updatedAt: current.updatedAt,
+      fields: conflicts.map((f) => ({
+        apiName: f,
+        label: f === 'owner_id' ? 'Owner' : (def.fields.find((x) => x.apiName === f)?.label ?? f),
+        value: f === 'owner_id' ? visible.ownerId : (visible.fields[f] ?? null),
+        ...lastChange.get(f)!,
+      })),
+    };
+    const labels = details.fields.map((f) => f.label).join(', ');
+    throw new AppError(409, 'edit_conflict', `Someone else changed ${labels} while you were editing. Review their changes and save again.`, details);
   }
 
   async delete(principal: Principal, object: string, id: string, opts: WriteOptions = {}): Promise<{ deleted: number }> {
@@ -839,7 +873,7 @@ export class RecordService {
       }
       const ids = deleted.map((r) => r.id);
       for (const part of chunk(ids, 200)) await tx.run(`DELETE FROM records WHERE id IN (${placeholders(part.length)})`, part);
-      await this.writeHistory(tx, root, 'deleted', null, principal);
+      await this.writeHistory(tx, root, 'deleted', null, principal, nowIso());
 
       // Clear remaining lookups that pointed at deleted records.
       const deletedObjects = [...new Set(deleted.map((r) => r.object))];
@@ -855,7 +889,7 @@ export class RecordService {
             const rec = rowToRecord(row);
             const { fields, name } = this.finalize(refObj, { ...rec.fields, [field.apiName]: null }, { id: rec.id, ownerId: rec.ownerId, createdAt: rec.createdAt, updatedAt: rec.updatedAt });
             await tx.run('UPDATE records SET name = ?, data = ?, search_text = ? WHERE id = ?', [name, JSON.stringify(fields), this.searchText(refObj, name, fields), rec.id]);
-            await this.writeHistory(tx, rec, 'updated', [{ field: field.apiName, from: rec.fields[field.apiName], to: null }], principal);
+            await this.writeHistory(tx, rec, 'updated', [{ field: field.apiName, from: rec.fields[field.apiName], to: null }], principal, nowIso());
           }
         }
       }

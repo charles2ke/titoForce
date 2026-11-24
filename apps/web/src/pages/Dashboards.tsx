@@ -6,7 +6,8 @@ import { Link, useNavigate } from 'react-router';
 import { api } from '../api.ts';
 import { useToast } from '../components/feedback.tsx';
 import { Badge, Button, cx, EmptyState, ErrorBanner, FormField, Loading, Modal, PageHeader } from '../components/ui.tsx';
-import { formatDateTime, plural, relativeTime } from '../lib/format.ts';
+import { t } from '../i18n/index.ts';
+import { formatDateTime, relativeTime } from '../lib/format.ts';
 import { useApps, usePermissions } from '../lib/hooks.ts';
 
 // Literal class names so Tailwind generates them.
@@ -15,7 +16,7 @@ const SPAN: Record<1 | 2 | 3, string> = { 1: 'col-span-1', 2: 'col-span-2', 3: '
 /** Miniature of the widget layout (sizes are column spans in a 3-column grid). */
 function LayoutThumb({ widgets }: { widgets: DashboardDef['widgets'] }) {
   if (!widgets.length) {
-    return <div className="flex h-14 items-center justify-center rounded-md border border-dashed border-slate-200 text-xs text-slate-400">No widgets yet</div>;
+    return <div className="flex h-14 items-center justify-center rounded-md border border-dashed border-slate-200 text-xs text-slate-400">{t('dashboards.list.noWidgets')}</div>;
   }
   return (
     <div className="grid h-14 grid-cols-3 content-start gap-1 overflow-hidden" aria-hidden>
@@ -36,7 +37,7 @@ function NewDashboardModal({ open, onClose }: { open: boolean; onClose: () => vo
     mutationFn: () => api.post<DashboardDef>('/api/dashboards', { name: name.trim(), description: description.trim(), app: null, widgets: [] }),
     onSuccess: async (d) => {
       await qc.invalidateQueries({ queryKey: ['dashboards'] });
-      toast.success(`Dashboard “${d.name}” created`);
+      toast.success(t('dashboards.create.created', { name: d.name }));
       navigate(`/dashboards/${d.id}?edit=1`);
     },
   });
@@ -52,15 +53,15 @@ function NewDashboardModal({ open, onClose }: { open: boolean; onClose: () => vo
     <Modal
       open={open}
       onClose={close}
-      title="New dashboard"
+      title={t('dashboards.newDashboard')}
       size="sm"
       footer={
         <>
           <Button onClick={close} disabled={create.isPending}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button variant="primary" type="submit" form="new-dashboard-form" loading={create.isPending} disabled={!name.trim()}>
-            Create
+            {t('common.create')}
           </Button>
         </>
       }
@@ -74,13 +75,13 @@ function NewDashboardModal({ open, onClose }: { open: boolean; onClose: () => vo
         }}
       >
         <ErrorBanner error={create.error} />
-        <FormField label="Name" htmlFor="new-dashboard-name" required>
-          <input id="new-dashboard-name" className="input" value={name} maxLength={120} placeholder="e.g. Sales overview" onChange={(e) => setName(e.target.value)} />
+        <FormField label={t('common.name')} htmlFor="new-dashboard-name" required>
+          <input id="new-dashboard-name" className="input" value={name} maxLength={120} placeholder={t('dashboards.create.namePlaceholder')} onChange={(e) => setName(e.target.value)} />
         </FormField>
-        <FormField label="Description" htmlFor="new-dashboard-description">
+        <FormField label={t('common.description')} htmlFor="new-dashboard-description">
           <textarea id="new-dashboard-description" className="input" rows={3} maxLength={1000} value={description} onChange={(e) => setDescription(e.target.value)} />
         </FormField>
-        <p className="text-xs text-slate-500">You can add reports to the dashboard next.</p>
+        <p className="text-xs text-slate-500">{t('dashboards.create.hint')}</p>
       </form>
     </Modal>
   );
@@ -97,13 +98,13 @@ export default function Dashboards() {
 
   const newButton = analyst ? (
     <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
-      New dashboard
+      {t('dashboards.newDashboard')}
     </Button>
   ) : null;
 
   return (
     <div className="mx-auto max-w-6xl p-6">
-      <PageHeader icon="layout-grid" color="indigo" title="Dashboards" subtitle="Collections of report charts. Everyone sees results for the records they can access." actions={newButton} />
+      <PageHeader icon="layout-grid" color="indigo" title={t('dashboards.title')} subtitle={t('dashboards.subtitle')} actions={newButton} />
 
       {q.isLoading ? (
         <Loading />
@@ -111,8 +112,8 @@ export default function Dashboards() {
         <ErrorBanner error={q.error} />
       ) : dashboards.length === 0 ? (
         <div className="card">
-          <EmptyState icon={LayoutDashboard} title="No dashboards yet" action={newButton}>
-            {analyst ? 'Create a dashboard to put several report charts on one page.' : 'Dashboards created by your analysts and admins will appear here.'}
+          <EmptyState icon={LayoutDashboard} title={t('dashboards.list.emptyTitle')} action={newButton}>
+            {analyst ? t('dashboards.list.emptyAnalyst') : t('dashboards.list.emptyViewer')}
           </EmptyState>
         </div>
       ) : (
@@ -138,11 +139,11 @@ export default function Dashboards() {
                       )}
                     </div>
                   </div>
-                  <p className={cx('line-clamp-2 min-h-10 text-sm', d.description ? 'text-slate-600' : 'text-slate-400 italic')}>{d.description || 'No description'}</p>
+                  <p className={cx('line-clamp-2 min-h-10 text-sm', d.description ? 'text-slate-600' : 'text-slate-400 italic')}>{d.description || t('dashboards.list.noDescription')}</p>
                   <LayoutThumb widgets={d.widgets} />
                   <div className="mt-auto flex items-center justify-between gap-2 text-xs text-slate-500">
-                    <span>{plural(d.widgets.length, 'widget')}</span>
-                    <span title={`Last modified ${formatDateTime(d.updatedAt)}`}>Updated {relativeTime(d.updatedAt)}</span>
+                    <span>{t('dashboards.list.widgetCount', { count: d.widgets.length })}</span>
+                    <span title={t('dashboards.list.lastModified', { date: formatDateTime(d.updatedAt) })}>{t('dashboards.list.updated', { time: relativeTime(d.updatedAt) })}</span>
                   </div>
                 </Link>
               </li>

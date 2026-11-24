@@ -3,6 +3,7 @@ import { validateFilter } from '../automation/engine.ts';
 import { type Db, parseJson } from '../db/database.ts';
 import { badRequest, forbidden, newId, notFound, nowIso } from '../util.ts';
 import type { MetadataService } from './metadata.ts';
+import { deleteTranslations } from './translations.ts';
 import { assertCanReadObject, assertSetup, objectPermission, type Principal } from './principal.ts';
 
 export type ListViewInput = Omit<ListViewDef, 'id' | 'ownerId'>;
@@ -149,6 +150,8 @@ export class ListViewService {
 export class AppService {
   private db: Db;
   private metadata: MetadataService;
+  /** Called after apps change (clients reload their navigation). */
+  onChange: (() => void) | null = null;
 
   constructor(db: Db, metadata: MetadataService) {
     this.db = db;
@@ -175,7 +178,8 @@ export class AppService {
     return app;
   }
 
-  private validate(app: Omit<AppDef, 'id'> & { id?: string }): Omit<AppDef, 'id'> {
+  /** Checks and normalizes an app. */
+  async validate(app: Omit<AppDef, 'id'> & { id?: string }): Promise<Omit<AppDef, 'id'>> {
     const name = String(app.name ?? '').trim();
     if (!name || name.length > 40) throw badRequest('App name is required (max 40 characters)');
     if (!Array.isArray(app.nav) || app.nav.length > 30) throw badRequest('Apps have up to 30 navigation items');
@@ -187,7 +191,7 @@ export class AppService {
       if (n.type === 'page' && PAGES.includes(n.page)) return { type: 'page', page: n.page, label: n.label?.trim() || n.page, icon: n.icon || 'layout-dashboard' };
       throw badRequest('Invalid navigation item');
     });
-    return {
+    const v = {
       name,
       description: String(app.description ?? '').trim(),
       icon: app.icon || 'layout-grid',
@@ -196,12 +200,13 @@ export class AppService {
       dashboardId: app.dashboardId ?? null,
       sortOrder: Number(app.sortOrder) || 0,
     };
+    if (v.dashboardId && !(await this.db.get('SELECT id FROM dashboards WHERE id = ?', [v.dashboardId]))) throw badRequest('Unknown dashboard');
+    return v;
   }
 
   async save(principal: Principal, app: Omit<AppDef, 'id'> & { id?: string }): Promise<AppDef> {
     assertSetup(principal);
-    const v = this.validate(app);
-    if (v.dashboardId && !(await this.db.get('SELECT id FROM dashboards WHERE id = ?', [v.dashboardId]))) throw badRequest('Unknown dashboard');
+    const v = await this.validate(app);
     const id = app.id && /^[a-z][a-z0-9_]{1,39}$/.test(app.id) ? app.id : newId('app');
     const { sortOrder, ...definition } = v;
     await this.db.run(
@@ -209,12 +214,17 @@ export class AppService {
        ON CONFLICT (id) DO UPDATE SET definition = excluded.definition, sort_order = excluded.sort_order`,
       [id, JSON.stringify(definition), sortOrder],
     );
+    this.onChange?.();
     return this.get(id);
   }
 
   async delete(principal: Principal, id: string): Promise<void> {
     assertSetup(principal);
     await this.get(id);
-    await this.db.run('DELETE FROM apps WHERE id = ?', [id]);
+    await this.db.transaction(async (tx) => {
+      await tx.run('DELETE FROM apps WHERE id = ?', [id]);
+      await deleteTranslations(tx, [`app.${id}.`]);
+    });
+    this.onChange?.();
   }
 }

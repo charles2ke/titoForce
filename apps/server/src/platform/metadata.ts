@@ -12,6 +12,7 @@ import {
 } from '@titoforce/shared';
 import { type Db, parseJson } from '../db/database.ts';
 import { badRequest, conflict, notFound, nowIso } from '../util.ts';
+import { deleteTranslations } from './translations.ts';
 
 const FORMULA_TYPES: FormulaResultType[] = ['number', 'currency', 'percent', 'text', 'date', 'checkbox'];
 // "name" is allowed only as the record-name field itself (it mirrors the records.name column).
@@ -26,11 +27,17 @@ export function isComputedField(f: FieldDef): boolean {
   return f.type === 'formula' || f.type === 'rollup';
 }
 
+/** Settings that change the stored names, formula and roll-up values of existing records (see recalculateObject). */
+export const RECALC_OBJECT_KEYS: readonly (keyof ObjectDef)[] = ['nameField', 'nameTemplate'];
+export const RECALC_FIELD_KEYS: readonly (keyof FieldDef)[] = ['formula', 'formulaType', 'rollup', 'precision'];
+
 type ObjectInput = Omit<ObjectDef, 'fields' | 'createdAt' | 'updatedAt'>;
 
 export class MetadataService {
   private db: Db;
   private cache = new Map<string, ObjectDef>();
+  /** Called whenever the object definitions were (re)loaded after a change. */
+  onChange: (() => void) | null = null;
 
   constructor(db: Db) {
     this.db = db;
@@ -55,6 +62,7 @@ export class MetadataService {
         fields: fields.filter((f) => f.object_api_name === o.api_name).map((f) => parseJson<FieldDef>(f.definition, {} as FieldDef)),
       });
     }
+    this.onChange?.();
   }
 
   list(): ObjectDef[] {
@@ -215,7 +223,8 @@ export class MetadataService {
     }
   }
 
-  private uniqueKeyPrefix(apiName: string): string {
+  /** A record-id prefix no other object uses. */
+  uniqueKeyPrefix(apiName: string): string {
     const used = new Set([...this.cache.values()].map((o) => o.keyPrefix));
     const base = apiName.replace(/[^a-z0-9]/g, '').padEnd(3, 'x');
     const candidates = [base.slice(0, 3), ...'0123456789abcdefghijklmnopqrstuvwxyz'.split('').map((c) => base.slice(0, 2) + c)];
@@ -267,6 +276,8 @@ export class MetadataService {
       await tx.run('DELETE FROM objects WHERE api_name = ?', [apiName]);
       await tx.run('DELETE FROM automations WHERE object_api_name = ?', [apiName]);
       await tx.run('DELETE FROM list_views WHERE object_api_name = ?', [apiName]);
+      await tx.run('DELETE FROM page_layouts WHERE object_api_name = ?', [apiName]);
+      await deleteTranslations(tx, ['object', 'field', 'picklist', 'section'].map((c) => `${c}.${apiName}.`));
     });
     await this.load();
   }
@@ -321,6 +332,9 @@ export class MetadataService {
       dateField: def.dateField === fieldApi ? undefined : def.dateField,
       timeline: def.timeline && (def.timeline.start === fieldApi || def.timeline.end === fieldApi) ? null : def.timeline,
     };
-    return this.saveObject(next);
+    const saved = await this.saveObject(next);
+    await deleteTranslations(this.db, [`field.${apiName}.${fieldApi}.`, `picklist.${apiName}.${fieldApi}.`]);
+    return saved;
   }
 }
+

@@ -1,0 +1,50 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  title: 'Traduções',
+  subtitle:
+    'Traduza os rótulos de objetos, campos, valores de lista de opções, seções de layout de página e aplicativos. As pessoas os veem no idioma em que usam o titoForce.',
+  englishBase: 'Os rótulos são definidos em inglês. Para alterar um rótulo em inglês, renomeie-o onde ele é definido, na Configuração.',
+  language: 'Idioma',
+  type: 'Tipo',
+  types: {
+    all: 'Todos os tipos',
+    object: 'Objetos',
+    field: 'Campos',
+    picklist: 'Valores de lista de opções',
+    layout: 'Seções de layout de página',
+    app: 'Aplicativos',
+  },
+  typeBadge: {
+    object: 'Objeto',
+    field: 'Campo',
+    picklist: 'Valor de lista de opções',
+    layout: 'Seção',
+    app: 'Aplicativo',
+  },
+  object: 'Objeto',
+  allObjects: 'Todos os objetos',
+  show: 'Mostrar',
+  statuses: {
+    all: 'Todos os rótulos',
+    missing: 'Não traduzidos',
+    custom: 'Traduzidos aqui',
+    builtIn: 'Traduções integradas',
+  },
+  search: 'Pesquisar rótulos',
+  searchPlaceholder: 'Pesquisar rótulos…',
+  progress: { one: '{done} de {count} rótulo traduzido', other: '{done} de {count} rótulos traduzidos' },
+  columns: {
+    label: 'Rótulo em inglês',
+    type: 'Tipo',
+    translation: 'Tradução ({language})',
+  },
+  translationOf: 'Tradução de “{label}”',
+  builtInHint: 'Tradução integrada. Digite para substituí-la.',
+  reset: 'Remover tradução',
+  noMatches: 'Nenhum rótulo corresponde a estes filtros.',
+  unsaved: { one: '{count} alteração não salva', other: '{count} alterações não salvas' },
+  save: 'Salvar traduções',
+  discard: 'Descartar',
+  saved: { one: '{count} tradução salva', other: '{count} traduções salvas' },
+} satisfies Translation['setupTranslations'];

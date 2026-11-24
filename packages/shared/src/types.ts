@@ -27,6 +27,8 @@ export type PaletteColor = (typeof PALETTE)[number];
 export interface PicklistOption {
   value: string;
   color?: PaletteColor;
+  /** Display text in the requester's language (set by the server when a translation exists; `value` is what is stored). */
+  label?: string;
 }
 
 export type FormulaResultType = 'number' | 'currency' | 'percent' | 'text' | 'date' | 'checkbox';
@@ -231,12 +233,15 @@ export interface UserDTO {
   active: boolean;
   isAgent: boolean;
   avatarColor: string;
+  /** Preferred UI language (null = browser default). */
+  locale: string | null;
   createdAt: string;
 }
 
 export interface SessionInfo {
   user: UserDTO;
   permissions: RolePermissions;
+  organization: OrganizationInfo;
 }
 
 // ---------- Apps ----------
@@ -526,4 +531,179 @@ export interface SearchResultGroup {
 
 export interface ApiErrorBody {
   error: { code: string; message: string; details?: unknown };
+}
+
+// ---------- Organizations (multi-tenancy) and sandboxes ----------
+
+export type OrganizationKind = 'production' | 'sandbox';
+export type SandboxType = 'developer' | 'full';
+export type OrganizationStatus = 'active' | 'provisioning' | 'refreshing' | 'suspended' | 'failed';
+
+export interface OrganizationInfo {
+  id: string;
+  /** Used to sign in ("organization" field, `?org=` or subdomain). */
+  slug: string;
+  name: string;
+  kind: OrganizationKind;
+  /** Developer sandboxes copy configuration and users only; full sandboxes also copy all records. */
+  sandboxType: SandboxType | null;
+  parentId: string | null;
+  parentSlug: string | null;
+  parentName: string | null;
+  status: OrganizationStatus;
+  createdAt: string;
+  refreshedAt: string | null;
+}
+
+/** A sandbox as listed in Setup → Sandboxes. */
+export interface SandboxInfo extends OrganizationInfo {
+  /** Why the last copy failed, if it did. */
+  error: string | null;
+  createdByName: string | null;
+}
+
+/** `GET /api/sandboxes`: `enabled` is false outside a production organization of a multi-organization server. */
+export interface SandboxList {
+  enabled: boolean;
+  sandboxes: SandboxInfo[];
+  max: number;
+}
+
+/** Bootstrap data for the sign-in page (`GET /api/config`). */
+export interface PublicConfig {
+  demo: boolean;
+  demoLogins: { email: string; name: string; title: string; roleId: string }[];
+  demoPassword: string | null;
+  organization: Pick<OrganizationInfo, 'slug' | 'name' | 'kind' | 'parentName'>;
+  /** More than one organization exists, so the sign-in page asks which one. */
+  multiOrg: boolean;
+  /** Organizations are addressed by subdomain (`acme.<baseDomain>`) rather than typed in; null when they are not. */
+  baseDomain: string | null;
+  /** Self-service sign-up for new organizations is enabled. */
+  signup: boolean;
+}
+
+export type DeployComponentType = 'object' | 'layout' | 'translation' | 'app' | 'automation' | 'approval_process' | 'agent' | 'report' | 'dashboard' | 'role';
+export type DeployComponentStatus = 'new' | 'changed' | 'unchanged' | 'production_only';
+
+/** A piece of configuration as compared between a sandbox and its production organization. */
+export interface DeployComponent {
+  type: DeployComponentType;
+  /** Object API name, layout/app/automation/... id, or the locale of a set of translations. */
+  id: string;
+  label: string;
+  /** The object a layout, automation, approval process or report belongs to. */
+  object: string | null;
+  objectLabel: string | null;
+  /** Only new and changed components can be deployed; deployments never delete anything in production. */
+  status: DeployComponentStatus;
+  /** Objects: fields; translations: labels. Production-only items are kept when deploying. */
+  items?: { added: number; changed: number; productionOnly: number };
+}
+
+export interface DeployResult {
+  deployment: DeploymentRecord;
+  /** The comparison after deploying. */
+  components: DeployComponent[];
+}
+
+export interface DeploymentRecord {
+  id: string;
+  sourceId: string;
+  sourceName: string;
+  targetId: string;
+  deployedBy: string;
+  components: { type: DeployComponentType; id: string; label: string }[];
+  status: 'succeeded' | 'failed';
+  error: string | null;
+  createdAt: string;
+}
+
+// ---------- Page layouts ----------
+
+export interface LayoutSection {
+  id: string;
+  title: string;
+  columns: 1 | 2;
+  /** Field api names in display order. */
+  fields: string[];
+}
+
+export interface PageLayoutDef {
+  id: string;
+  object: string;
+  name: string;
+  /** Used by roles without an assigned layout. Exactly one layout per object is the default. */
+  isDefault: boolean;
+  /** Fields shown in the record header (max 6). */
+  highlights: string[];
+  sections: LayoutSection[];
+  /** Related lists in display order, as `<childObject>.<lookupField>`. */
+  relatedLists: string[];
+  /** Roles that see this layout. */
+  roleIds: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** A related list that can be placed on a layout. */
+export interface RelatedListOption {
+  id: string;
+  object: string;
+  field: string;
+  label: string;
+}
+
+// ---------- Translations ----------
+
+export const SUPPORTED_LOCALES = ['en', 'es', 'fr', 'de', 'pt', 'ja'] as const;
+export type LocaleCode = (typeof SUPPORTED_LOCALES)[number];
+
+export type TranslationCategory = 'object' | 'field' | 'picklist' | 'layout' | 'app';
+
+/** One translatable metadata label (Setup → Translations). */
+export interface TranslationEntry {
+  key: string;
+  category: TranslationCategory;
+  /** Object api name the label belongs to (null for apps). */
+  object: string | null;
+  /** Where the label appears, e.g. "Opportunity · Stage · Closed Won". */
+  context: string;
+  /** Current label in the base language (English). */
+  source: string;
+  /** Override saved by an administrator. */
+  value: string | null;
+  /** Built-in translation of the standard label, used when there is no override. */
+  builtIn: string | null;
+}
+
+// ---------- Real-time collaboration ----------
+
+export interface PresenceViewer {
+  userId: string;
+  name: string;
+  avatarColor: string;
+  /** Field api name being edited, '*' for the whole record form, null when just viewing. */
+  editing: string | null;
+}
+
+export type RealtimeServerMessage =
+  | { type: 'ready'; userId: string }
+  | { type: 'records'; object: string; ids: string[]; action: 'created' | 'updated' | 'deleted'; by: string | null }
+  | { type: 'notification'; notification: NotificationDTO }
+  | { type: 'metadata' }
+  | { type: 'presence'; recordId: string; viewers: PresenceViewer[] }
+  | { type: 'pong' }
+  | { type: 'error'; message: string };
+
+export type RealtimeClientMessage =
+  | { type: 'auth'; token: string }
+  | { type: 'watch'; recordId: string | null }
+  | { type: 'editing'; recordId: string; field: string | null }
+  | { type: 'ping' };
+
+/** `details` of a 409 `edit_conflict`: fields someone else changed since the record was loaded. */
+export interface EditConflictDetails {
+  updatedAt: string;
+  fields: { apiName: string; label: string; value: unknown; by: string | null; at: string }[];
 }

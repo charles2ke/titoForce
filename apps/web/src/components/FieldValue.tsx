@@ -2,7 +2,8 @@ import type { FieldDef, RefMap } from '@titoforce/shared';
 import { numberFormat } from '@titoforce/shared';
 import { Check } from 'lucide-react';
 import { Link } from 'react-router';
-import { formatNumber, formatValue } from '../lib/format.ts';
+import { t } from '../i18n/index.ts';
+import { formatNumber, formatValue, optionLabel } from '../lib/format.ts';
 import { useUsers } from '../lib/hooks.ts';
 import { Avatar, Badge } from './ui.tsx';
 
@@ -11,7 +12,7 @@ const isEmpty = (v: unknown) => v === null || v === undefined || v === '' || (Ar
 export function UserChip({ id, name, size = 'xs' }: { id: string; name?: string; size?: 'xs' | 'sm' }) {
   const users = useUsers();
   const user = users.data?.find((u) => u.id === id);
-  const label = user?.name ?? name ?? 'Unknown user';
+  const label = user?.name ?? name ?? t('common.unknownUser');
   return (
     <span className="inline-flex max-w-full items-center gap-1.5">
       <Avatar name={label} color={user?.avatarColor} size={size} />
@@ -23,7 +24,7 @@ export function UserChip({ id, name, size = 'xs' }: { id: string; name?: string;
 /** Rich, read-only rendering of a field value. */
 export function FieldValue({ field, value, refs }: { field: FieldDef | undefined; value: unknown; refs?: RefMap }) {
   if (field?.type === 'checkbox' || (field?.type === 'formula' && field.formulaType === 'checkbox')) {
-    return value ? <Check className="size-4 text-emerald-600" aria-label="Yes" /> : <span className="text-slate-300">—</span>;
+    return value ? <Check className="size-4 text-emerald-600" aria-label={t('common.yes')} /> : <span className="text-slate-300">—</span>;
   }
   if (isEmpty(value)) return <span className="text-slate-300">—</span>;
   if (!field) return <>{formatValue(undefined, value)}</>;
@@ -34,14 +35,14 @@ export function FieldValue({ field, value, refs }: { field: FieldDef | undefined
   switch (field.type) {
     case 'picklist': {
       const opt = field.options?.find((o) => o.value === value);
-      return <Badge color={opt?.color}>{String(value)}</Badge>;
+      return <Badge color={opt?.color}>{opt?.label ?? String(value)}</Badge>;
     }
     case 'multipicklist':
       return (
         <span className="inline-flex flex-wrap gap-1">
           {(Array.isArray(value) ? value : [value]).map((v) => (
             <Badge key={String(v)} color={field.options?.find((o) => o.value === v)?.color}>
-              {String(v)}
+              {optionLabel(field, v)}
             </Badge>
           ))}
         </span>
@@ -76,7 +77,7 @@ export function FieldValue({ field, value, refs }: { field: FieldDef | undefined
           {ref.name}
         </Link>
       ) : (
-        <span className="text-slate-400">Restricted record</span>
+        <span className="text-slate-400">{t('components.fieldValue.restricted')}</span>
       );
     }
     case 'user':

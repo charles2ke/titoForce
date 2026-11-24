@@ -1,0 +1,40 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  title: 'ユーザー',
+  subtitle: 'ログインできるユーザーと、そのロールおよびアクセス権。',
+  newUser: '新規ユーザー',
+  searchLabel: 'ユーザーを検索',
+  searchPlaceholder: '名前、メール、役職、ロールで検索…',
+  showInactive: '無効なユーザーを表示（{count}）',
+  noMatches: '検索条件に一致するユーザーはいません',
+  empty: 'ユーザーはいません',
+  jobTitle: '役職',
+  you: 'あなた',
+  aiAgent: 'AI エージェント',
+  editUser: '{name}の編集',
+
+  form: {
+    newTitle: '新規ユーザー',
+    create: 'ユーザーを作成',
+    save: 'ユーザーを保存',
+    added: '{name}を追加しました',
+    saved: '{name}を保存しました',
+    chooseRole: 'ロールを選択…',
+    invalidEmail: '有効なメールアドレスを入力してください。',
+    passwordTooShort: '8 文字以上で入力してください。',
+    agentNotice:
+      'これは AI エージェントのサービスユーザーです。自動化によって開始されたエージェントはこのユーザーとして動作するため、このユーザーのロールによってエージェントが実行できる操作が制限されます。このユーザーではログインできません。',
+    emailHelp: 'ログインに使用します。',
+    fullName: '氏名',
+    titlePlaceholder: 'アカウントエグゼクティブ',
+    roleHelp: 'ユーザーが参照・操作できる範囲を制御します。',
+    ownRoleHelp: '自分のロールは変更できません。',
+    newPassword: '新しいパスワード',
+    passwordHelp: '8 文字以上で入力してください。ユーザーには安全な方法で伝えてください。',
+    ownPasswordHelp: '現在のパスワードを維持する場合は空欄のままにしてください。変更すると、すべての場所でログアウトされます。',
+    userPasswordHelp: '現在のパスワードを維持する場合は空欄のままにしてください。変更すると、ユーザーはログアウトされます。',
+    cantDeactivateSelf: '自分自身を無効にすることはできません。',
+    inactiveHelp: '無効なユーザーはログインできません。レコードは保持されます。',
+  },
+} satisfies Translation['setupUsers'];

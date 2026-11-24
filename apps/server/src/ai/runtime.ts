@@ -160,7 +160,7 @@ export class AgentService {
     return new Set((await this.db.all<{ id: string }>('SELECT id FROM agents')).map((r) => r.id));
   }
 
-  private validate(input: AgentInput): AgentInput {
+  validate(input: AgentInput): AgentInput {
     const name = String(input.name ?? '').trim();
     if (!name) throw badRequest('Agent name is required');
     if (name.length > 80) throw badRequest('Agent name is too long');

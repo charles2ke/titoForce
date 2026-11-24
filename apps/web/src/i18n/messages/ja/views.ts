@@ -1,0 +1,66 @@
+import type { Translation } from '../../index.ts';
+
+export default {
+  noName: '（名前なし）',
+  today: '今日',
+
+  table: {
+    selectAll: 'このページのすべてを選択',
+    selectRecord: '{name}を選択',
+    rowActions: '{name}のアクション',
+    selected: { other: '{count} 件を選択中' },
+    updateField: '項目を更新',
+    clearSelection: '選択をクリア',
+    emptyTitle: '{plural}が見つかりません',
+    emptyFiltered: '検索条件を変更するか、フィルターを解除してください。',
+    emptyCreate: '最初の{label}を作成して始めましょう。',
+    deleteTitle: '{label}を削除しますか？',
+    deleteMessage: '「{name}」は完全に削除されます。',
+    deleted: '「{name}」を削除しました',
+    bulkDeleteTitle: { other: '{count} 件のレコードを削除しますか？' },
+    bulkDeleteMessage: 'この操作は元に戻せません。削除権限のないレコードはスキップされます。',
+    bulkDeleted: { other: '{count} 件のレコードを削除しました' },
+    bulkDeletePartial: '{done} 件を削除しました。{failed} 件は削除できませんでした：{error}',
+    bulkUpdateTitle: { one: '{count} 件の{singular}を更新', other: '{count} 件の{plural}を更新' },
+    update: '更新',
+    newValue: '新しい値',
+    newValueHelp: '空のままにすると項目がクリアされます。',
+    bulkUpdated: { other: '{count} 件のレコードを更新しました' },
+    bulkUpdatePartial: '{done} 件を更新しました。{failed} 件は失敗しました：{error}',
+  },
+
+  kanban: {
+    needsPicklist: 'カンバンボードには、グループ化に使用する選択リストが必要です。「{field}」は選択リストではありません。',
+    noValue: '{field}なし',
+    truncated: '{total} 件中、最初の {shown} 件のレコードを表示しています。フィルターを追加してボードを絞り込んでください。',
+    boardLabel: '{field}別の{plural}',
+    move: '{name}を移動',
+    dropHere: 'ここにカードをドロップ',
+  },
+
+  calendar: {
+    needsDateField: 'カレンダービューには日付項目が必要です。「{field}」は日付項目ではありません。',
+    byField: '基準：{field}',
+    previousMonth: '前月',
+    nextMonth: '翌月',
+    gridLabel: 'カレンダー',
+    dayItems: { other: '{date}：{count} 件' },
+    newOn: '{date}の新規{label}',
+    more: { other: '他 {count} 件' },
+    truncated: 'この範囲のレコード {total} 件のうち、最初の {shown} 件を表示しています。',
+  },
+
+  timeline: {
+    notConfigured: '{label}には、タイムライン用の開始日と終了日が設定されていません。',
+    start: '開始',
+    end: '終了',
+    range: '{start}～{end}',
+    earlier: '前へ',
+    later: '次へ',
+    emptyTitle: 'この期間の{plural}はありません',
+    emptyBody: '矢印を使って他の月を表示してください。',
+    barTitle: '{name}：{start}～{end}',
+    barTitleNoEnd: '{name}：{start}～（終了日なし）',
+    truncated: 'この期間のレコード {total} 件のうち、最初の {shown} 件を表示しています。',
+  },
+} satisfies Translation['views'];
