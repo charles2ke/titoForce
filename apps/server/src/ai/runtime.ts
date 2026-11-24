@@ -311,6 +311,7 @@ export class AgentService {
   }
 
   private async runBrain(state: RunState, input: string): Promise<string> {
+    const mutatingTools = new Set(TOOLS.filter((tool) => tool.kind === 'write').map((tool) => tool.name));
     const users = (await this.deps.users.listUsers(false)).filter((u) => u.active);
     const gen = plan(input, {
       metadata: this.deps.metadata,
@@ -325,6 +326,9 @@ export class AgentService {
     let calls = 0;
     while (!next.done) {
       if (++calls > MAX_BRAIN_CALLS) throw new Error('The agent made too many tool calls');
+      if (mutatingTools.has(next.value.tool) && state.agent.autonomy !== 'approval_required') {
+        throw new Error(`Approval is required for ${next.value.tool}; use an approval_required agent.`);
+      }
       next = await gen.next(await this.invokeTool(state, next.value.tool, next.value.args));
     }
     state.steps.push({ type: 'message', at: nowIso(), text: next.value });
