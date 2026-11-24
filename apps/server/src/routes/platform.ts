@@ -249,11 +249,22 @@ export function platformRoutes(app: FastifyInstance, s: Services): void {
     return s.sharing.update(params(req).id!, parse(schemas.sharingRule, req.body));
   });
 
-  app.delete('/api/sharing-rules/:id', async (req) => {
-    assertSetup(principalOf(req));
-    await s.sharing.delete(params(req).id!);
-    return { ok: true };
-  });
+  app.delete(
+    '/api/sharing-rules/:id',
+    {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: '1 minute',
+        },
+      },
+    },
+    async (req) => {
+      assertSetup(principalOf(req));
+      await s.sharing.delete(params(req).id!);
+      return { ok: true };
+    },
+  );
 
   // ---------- notifications & search ----------
 
