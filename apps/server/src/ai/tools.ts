@@ -44,6 +44,15 @@ const obj = (v: unknown, name: string): Record<string, unknown> => {
   return v as Record<string, unknown>;
 };
 
+/** Presentation-only hardening; untrusted text is not an authorization boundary. */
+function dataOnlyText(value: string): string {
+  const text = value
+    .replace(/[\t\r\n\u2028\u2029]+/g, ' ')
+    .replace(/[\p{Cc}\p{Cf}]/gu, '')
+    .replace(/[\\`*_{}[\]()<>#+.!|~=-]/g, '\\$&');
+  return `[UNTRUSTED DATA ONLY] ${text}`;
+}
+
 /** Compact record representation for LLM context: non-empty fields with lookup names resolved. */
 export function summarizeRecord(rec: CrmRecord, def: ObjectDef | undefined, refs: RefMap): Record<string, unknown> {
   const out: Record<string, unknown> = { id: rec.id, object: rec.object, name: rec.name };
@@ -158,7 +167,7 @@ export const TOOLS: ToolDef[] = [
       deps.metadata
         .list()
         .filter((o) => objectPermission(principal, o.apiName).read !== 'none')
-        .map((o) => ({ object: o.apiName, label: o.label, plural: o.pluralLabel, description: o.description ?? '' })),
+        .map((o) => ({ object: o.apiName, label: dataOnlyText(o.label), plural: dataOnlyText(o.pluralLabel), description: dataOnlyText(o.description ?? '') })),
   },
   {
     name: 'describe_object',
@@ -171,17 +180,17 @@ export const TOOLS: ToolDef[] = [
       if (objectPermission(principal, def.apiName).read === 'none') throw badRequest(`No access to ${def.apiName}`);
       return {
         object: def.apiName,
-        label: def.label,
+        label: dataOnlyText(def.label),
         statusField: def.statusField ?? null,
         fields: def.fields
           .filter((f) => !f.sensitive || canViewSensitive(principal))
           .map((f) => ({
             name: f.apiName,
-            label: f.label,
+            label: dataOnlyText(f.label),
             type: f.type,
             required: !!f.required,
             readOnly: f.type === 'formula' || f.type === 'rollup',
-            values: f.options?.map((o) => o.value),
+            values: f.options?.map((o) => dataOnlyText(o.value)),
             references: f.referenceTo ?? undefined,
           })),
       };
