@@ -4,9 +4,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { assertSetup } from '../platform/principal.ts';
 import { SsoError } from '../platform/sso.ts';
 import type { Services } from '../services.ts';
-import { RateLimiter } from '../util.ts';
+import { AppError, RateLimiter } from '../util.ts';
 import { sessionCookieOptions } from './auth.ts';
-import { params, parse, principalOf, query, SESSION_COOKIE } from './http.ts';
+import { auth, params, parse, principalOf, query, SESSION_COOKIE } from './http.ts';
 import * as schemas from './schemas.ts';
 
 /** Ties a sign-in to the browser that started it. */
@@ -33,6 +33,7 @@ export function safeNext(raw: unknown): string {
 
 export function ssoRoutes(app: FastifyInstance, s: Services): void {
   const starts = new RateLimiter(30, 60_000);
+  const removals = new RateLimiter(30, 60_000);
 
   function fail(req: FastifyRequest, reply: FastifyReply, err: unknown) {
     const reason = err instanceof SsoError ? err.reason : 'failed';
@@ -123,7 +124,8 @@ export function ssoRoutes(app: FastifyInstance, s: Services): void {
     return s.sso.update(id, body, publicBaseUrl(s, req));
   });
 
-  app.delete('/api/sso-providers/:id', { preHandler: RateLimiter({ max: 30, timeWindow: '1 minute' }) }, async (req) => {
+  app.delete('/api/sso-providers/:id', async (req) => {
+    if (!removals.hit(auth(req).user.id)) throw new AppError(429, 'rate_limited', 'Too many requests. Please wait a minute and try again.');
     assertSetup(principalOf(req));
     await s.sso.remove(params(req).id);
     return { ok: true };

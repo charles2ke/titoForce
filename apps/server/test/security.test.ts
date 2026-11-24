@@ -405,6 +405,21 @@ describe('OpenID Connect sign-in', () => {
     expect((await provider({ enabled: true })).statusCode).toBe(200);
   });
 
+  it('limits how quickly each user can remove providers', async () => {
+    // A separate app starts with an empty limit and leaves the shared one untouched.
+    const fresh = await buildApp(s);
+    try {
+      const remove = (cookie: string) => fresh.inject({ method: 'DELETE', url: '/api/sso-providers/missing', headers: { cookie } });
+      for (let i = 0; i < 30; i++) expect((await remove(admin)).statusCode).toBe(404);
+      const limited = await remove(admin);
+      expect(limited.statusCode).toBe(429);
+      expect(limited.json().error.code).toBe('rate_limited');
+      expect((await remove(await login('maria'))).statusCode).toBe(403);
+    } finally {
+      await fresh.close();
+    }
+  });
+
   it('signs in the user with the same email and links the identity', async () => {
     const flow = await start('/app/sales?view=mine');
     expect(flow.redirectUri).toBe(`${BASE}/api/auth/sso/acme/callback`);
