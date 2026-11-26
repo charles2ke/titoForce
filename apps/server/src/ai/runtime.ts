@@ -337,6 +337,7 @@ export class AgentService {
 
   private async runLlm(provider: LlmProvider, state: RunState, input: string, history: ConversationMessage[]): Promise<string> {
     const tools = this.allowedTools(state.agent).map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
+    const mutatingTools = new Set(TOOLS.filter((tool) => tool.kind === 'write').map((tool) => tool.name));
     const system = await this.systemPrompt(state);
     const messages: LlmMessage[] = [...history.map((m): LlmMessage => (m.role === 'user' ? { role: 'user', content: m.content } : { role: 'assistant', content: m.content })), { role: 'user', content: input }];
     for (let step = 0; step < MAX_LLM_STEPS; step++) {
@@ -349,6 +350,9 @@ export class AgentService {
       if (res.text?.trim()) state.steps.push({ type: 'message', at: nowIso(), text: res.text.trim() });
       messages.push({ role: 'assistant', content: res.text, toolCalls: res.toolCalls });
       for (const tc of res.toolCalls) {
+        if (mutatingTools.has(tc.name) && tools.some((tool) => tool.name === tc.name) && state.agent.autonomy !== 'approval_required') {
+          throw new Error(`Approval is required for ${tc.name}; use an approval_required agent.`);
+        }
         const outcome = await this.invokeTool(state, tc.name, tc.args);
         const payload = !outcome.ok
           ? { error: outcome.error }

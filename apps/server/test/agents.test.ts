@@ -157,6 +157,35 @@ describe('LLM provider (mocked OpenAI-compatible API)', () => {
     await expect(s.agents.decideAction(maria, step.actionId!, 'approve')).rejects.toMatchObject({ status: 409 });
   });
 
+  it('blocks autonomous writes before execution', async () => {
+    const admin = await principal(s, 'admin');
+    const opp = (await s.records.query(maria, 'opportunity', { pageSize: 1 })).records[0]!;
+    const agent = await s.agents.create(admin, {
+      name: 'Autonomous LLM writer',
+      description: '',
+      instructions: '',
+      tools: ['update_record'],
+      autonomy: 'autonomous',
+      icon: 'bot',
+      color: 'indigo',
+      active: true,
+    });
+    const updateRecord = TOOLS.find((tool) => tool.name === 'update_record')!;
+    const execute = vi.spyOn(updateRecord, 'run');
+    script = [{ content: null, tool_calls: [call('update_record', { id: opp.id, fields: { stage: 'Closed Lost' } })] }];
+    try {
+      const run = await chat(maria, agent.id, 'Close this deal', opp.id);
+      expect(run.status).toBe('failed');
+      expect(run.error).toContain('Approval is required for update_record');
+      expect(run.steps.some((step) => step.type === 'tool_call')).toBe(false);
+      expect(execute).not.toHaveBeenCalled();
+      expect((await s.records.get(maria, 'opportunity', opp.id)).fields.stage).toBe(opp.fields.stage);
+      expect((await s.agents.listActions(maria)).filter((action) => action.runId === run.id)).toEqual([]);
+    } finally {
+      execute.mockRestore();
+    }
+  });
+
   it("limits agents to their enabled tools and the requesting user's permissions", async () => {
     const noah = await principal(s, 'noah');
     const opp = (await s.records.query(maria, 'opportunity', { pageSize: 1 })).records[0]!;
