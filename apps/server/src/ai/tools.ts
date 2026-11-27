@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { type CrmRecord, type FilterRule, isBlank, type ObjectDef, type RefMap, stringify, type ToolInfo } from '@titoforce/shared';
 import type { AnalyticsService } from '../analytics/reports.ts';
 import type { ApprovalService } from '../automation/approvals.ts';
@@ -76,8 +77,14 @@ const FILTER_SCHEMA = {
       field: { type: 'string' },
       op: { type: 'string', enum: ['eq', 'neq', 'contains', 'not_contains', 'starts_with', 'gt', 'gte', 'lt', 'lte', 'in', 'not_in', 'is_empty', 'is_not_empty'] },
       value: {
-        description: 'Comparison value; use an array for in / not_in',
-        anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }, { type: 'array', items: { type: 'string' } }],
+        description: 'Comparison value; use an array for in / not_in. Use {reference} from describe_object for picklist choices.',
+        anyOf: [
+          { type: 'string' },
+          { type: 'number' },
+          { type: 'boolean' },
+          { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { reference: { type: 'string' } }, required: ['reference'], additionalProperties: false }] } },
+          { type: 'object', properties: { reference: { type: 'string' } }, required: ['reference'], additionalProperties: false },
+        ],
       },
     },
     required: ['field', 'op'],
@@ -90,6 +97,37 @@ function toRules(v: unknown): FilterRule[] {
   return v.map((r) => {
     const rule = obj(r, 'filter');
     return { field: String(rule.field), op: String(rule.op) as FilterRule['op'], value: rule.value };
+  });
+}
+
+function optionReference(value: string): string {
+  return `option:${Buffer.from(value, 'utf8').toString('base64url')}`;
+}
+
+function resolveOptionReference(value: unknown, options: { value: string }[] | undefined): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const reference = (value as Record<string, unknown>).reference;
+  if (typeof reference !== 'string' || Object.keys(value).length !== 1) return value;
+  return options?.find((option) => optionReference(option.value) === reference)?.value ?? value;
+}
+
+function resolveFieldOptionReferences(def: ObjectDef | undefined, values: Record<string, unknown>): Record<string, unknown> {
+  if (!def) return values;
+  return Object.fromEntries(
+    Object.entries(values).map(([name, value]) => {
+      const options = def.fields.find((field) => field.apiName === name)?.options;
+      const resolve = (v: unknown) => resolveOptionReference(v, options);
+      return [name, Array.isArray(value) ? value.map(resolve) : resolve(value)];
+    }),
+  );
+}
+
+function resolveFilterOptionReferences(def: ObjectDef | undefined, rules: FilterRule[]): FilterRule[] {
+  if (!def) return rules;
+  return rules.map((rule) => {
+    const options = def.fields.find((field) => field.apiName === rule.field)?.options;
+    const resolve = (value: unknown) => resolveOptionReference(value, options);
+    return { ...rule, value: Array.isArray(rule.value) ? rule.value.map(resolve) : resolve(rule.value) };
   });
 }
 
@@ -172,7 +210,7 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'describe_object',
     kind: 'read',
-    description: 'Describe the fields of an object, including picklist values and lookup targets.',
+    description: 'Describe the fields of an object, including picklist values and lookup targets. Use a returned {reference} object as a picklist value in filters and writes.',
     parameters: { type: 'object', properties: { object: { type: 'string' } }, required: ['object'] },
     summarize: (a) => `Describe ${a.object}`,
     run: async (args, { principal, deps }) => {
@@ -190,7 +228,7 @@ export const TOOLS: ToolDef[] = [
             type: f.type,
             required: !!f.required,
             readOnly: f.type === 'formula' || f.type === 'rollup',
-            values: f.options?.map((o) => dataOnlyText(o.value)),
+            values: f.options?.map((o) => ({ reference: optionReference(o.value), label: dataOnlyText(o.value) })),
             references: f.referenceTo ?? undefined,
           })),
       };
@@ -227,7 +265,10 @@ export const TOOLS: ToolDef[] = [
     run: async (args, ctx) => {
       const object = str(args.object, 'object')!;
       const res = await ctx.deps.records.query(ctx.principal, object, {
-        filters: { match: args.match === 'any' ? 'any' : 'all', rules: toRules(args.filters) },
+        filters: {
+          match: args.match === 'any' ? 'any' : 'all',
+          rules: resolveFilterOptionReferences(ctx.deps.metadata.get(object), toRules(args.filters)),
+        },
         sort: args.sort_field ? { field: String(args.sort_field), dir: args.sort_dir === 'asc' ? 'asc' : 'desc' } : null,
         pageSize: Math.min(Math.max(Number(args.limit ?? 10) || 10, 1), 50),
       });
@@ -300,7 +341,7 @@ export const TOOLS: ToolDef[] = [
       const object = str(args.object, 'object')!;
       const fn = String(args.metric ?? 'count') as 'count';
       return deps.analytics.aggregate(principal, object, {
-        filters: { match: 'all', rules: toRules(args.filters) },
+        filters: { match: 'all', rules: resolveFilterOptionReferences(deps.metadata.get(object), toRules(args.filters)) },
         metric: { fn, field: str(args.field, 'field', false) },
         groupBy: args.group_by ? { field: String(args.group_by), interval: args.interval as 'month' | undefined } : null,
         sort: 'natural',
@@ -368,7 +409,9 @@ export const TOOLS: ToolDef[] = [
       return `Create ${def?.label ?? a.object} "${name.trim() || 'untitled'}"`;
     },
     run: async (args, ctx) => {
-      const rec = await ctx.deps.records.create(ctx.principal, str(args.object, 'object')!, obj(args.fields, 'fields'));
+      const object = str(args.object, 'object')!;
+      const fields = resolveFieldOptionReferences(ctx.deps.metadata.get(object), obj(args.fields, 'fields'));
+      const rec = await ctx.deps.records.create(ctx.principal, object, fields);
       return { created: true, ...recordResult(ctx, rec, await ctx.deps.records.resolveRefs(ctx.principal, [rec])) };
     },
   },
@@ -380,7 +423,8 @@ export const TOOLS: ToolDef[] = [
     summarize: (a) => `Update ${a.id}: ${Object.entries((a.fields ?? {}) as Record<string, unknown>).map(([k, v]) => `${k} → ${stringify(v)}`).join(', ')}`,
     run: async (args, ctx) => {
       const current = await ctx.deps.records.get(ctx.principal, null, str(args.id, 'id')!);
-      const rec = await ctx.deps.records.update(ctx.principal, current.object, current.id, obj(args.fields, 'fields'));
+      const fields = resolveFieldOptionReferences(ctx.deps.metadata.get(current.object), obj(args.fields, 'fields'));
+      const rec = await ctx.deps.records.update(ctx.principal, current.object, current.id, fields);
       return { updated: true, ...recordResult(ctx, rec, await ctx.deps.records.resolveRefs(ctx.principal, [rec])) };
     },
   },

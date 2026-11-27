@@ -95,7 +95,7 @@ describe('LLM provider (mocked OpenAI-compatible API)', () => {
       fields: original.fields.map((f) => ({
         ...f,
         label: text,
-        options: f.options?.map((o) => ({ ...o, value: text })),
+        options: f.options?.map((o, index) => f.apiName === 'lead_source' && index === 0 ? { ...o, value: text } : { ...o }),
       })),
     };
     try {
@@ -119,7 +119,15 @@ describe('LLM provider (mocked OpenAI-compatible API)', () => {
           type: f.type,
           required: !!f.required,
           readOnly: f.type === 'formula' || f.type === 'rollup',
-          ...(f.options ? { values: f.options.map(() => expected) } : {}),
+          ...(f.options ? {
+            values: f.options.map((o, index) => {
+              const value = f.apiName === 'lead_source' && index === 0 ? text : o.value;
+              return {
+                reference: `option:${Buffer.from(value, 'utf8').toString('base64url')}`,
+                label: value === text ? expected : expect.stringContaining('[UNTRUSTED DATA ONLY]'),
+              };
+            }),
+          } : {}),
           ...(f.referenceTo ? { references: f.referenceTo } : {}),
         })),
       });
@@ -128,6 +136,46 @@ describe('LLM provider (mocked OpenAI-compatible API)', () => {
     } finally {
       await s.metadata.saveObject(original);
     }
+  });
+
+  it('round-trips distinct picklist options through describe and update tools', async () => {
+    const original = s.metadata.require('lead');
+    const field = original.fields.find((f) => f.apiName === 'lead_source')!;
+    const previousOptions = field.options!;
+    const choices = ['North\nAmerica', 'North America'];
+    const lead = (await s.records.query(maria, 'lead', { pageSize: 1 })).records[0]!;
+    const previousValue = lead.fields.lead_source;
+    const modified = {
+      ...original,
+      fields: original.fields.map((f) => f === field ? { ...f, options: choices.map((value) => ({ value })) } : f),
+    };
+    const firstReference = `option:${Buffer.from(choices[0]!, 'utf8').toString('base64url')}`;
+    const reference = `option:${Buffer.from(choices[1]!, 'utf8').toString('base64url')}`;
+    try {
+      await s.metadata.saveObject(modified);
+      await s.records.update(maria, 'lead', lead.id, { lead_source: choices[0] });
+      script = [
+        { content: null, tool_calls: [call('describe_object', { object: 'lead' })] },
+        { content: null, tool_calls: [call('query_records', { object: 'lead', filters: [{ field: 'lead_source', op: 'eq', value: { reference: firstReference } }] })] },
+        { content: null, tool_calls: [call('update_record', { id: lead.id, fields: { lead_source: { reference } } })] },
+        { content: 'Updated.' },
+      ];
+
+      expect((await chat(maria, 'agt_copilot', 'Set this lead source to North America')).status).toBe('completed');
+      const described = JSON.parse(requests[1]!.body.messages.at(-1)!.content!);
+      const values = described.fields.find((f: { name: string }) => f.name === 'lead_source').values;
+      expect(values).toEqual([
+        { reference: `option:${Buffer.from(choices[0]!, 'utf8').toString('base64url')}`, label: '[UNTRUSTED DATA ONLY] North America' },
+        { reference, label: '[UNTRUSTED DATA ONLY] North America' },
+      ]);
+      const queried = JSON.parse(requests[2]!.body.messages.at(-1)!.content!);
+      expect(queried.records.map((record: { id: string }) => record.id)).toContain(lead.id);
+      expect((await s.records.get(maria, 'lead', lead.id)).fields.lead_source).toBe(choices[1]);
+    } finally {
+      await s.metadata.saveObject(original);
+      await s.records.update(maria, 'lead', lead.id, { lead_source: previousValue });
+    }
+    expect(s.metadata.require('lead').fields.find((f) => f.apiName === 'lead_source')!.options).toEqual(previousOptions);
   });
 
   it('queues writes from approval-required agents until a person approves them', async () => {
