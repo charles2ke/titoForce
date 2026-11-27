@@ -584,7 +584,16 @@ export function standardObjects(): ObjectDef[] {
         date('due_date', 'Due Date'),
         lookup('related_to', 'Related To', '*', { cascadeDelete: true }),
         longtext('description', 'Description'),
+        ...meetingFields(),
       ],
     }),
   ];
 }
+
+/** Meeting details on activities (added in v0.2: databases seeded earlier get them from `upgradeStandardObjects`). */
+export const meetingFields = (): FieldDef[] => [
+  datetime('start_time', 'Start'),
+  datetime('end_time', 'End'),
+  text('location', 'Location'),
+  longtext('attendees', 'Attendees', { helpText: 'Email addresses of other participants, one per line' }),
+];

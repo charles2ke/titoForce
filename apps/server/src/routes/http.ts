@@ -18,6 +18,8 @@ declare module 'fastify' {
   interface FastifyContextConfig {
     /** Route is reachable without a session. */
     public?: boolean;
+    /** Signed provider callback (e.g. Twilio) that may post form-encoded bodies; implies `public`. */
+    webhook?: boolean;
   }
 }
 

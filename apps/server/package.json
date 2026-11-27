@@ -15,7 +15,11 @@
     "@fastify/static": "^10.1.12",
     "@titoforce/shared": "*",
     "fastify": "^5.12.8",
+    "ical.js": "^2.2.1",
+    "imapflow": "^2.12.2",
+    "nodemailer": "^10.6.1",
     "pg": "^8.23.1",
+    "postal-mime": "^4.2.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {

@@ -8,6 +8,7 @@ import { analyticsRoutes } from './routes/analytics.ts';
 import { authRoutes } from './routes/auth.ts';
 import { automationRoutes } from './routes/automation.ts';
 import { SESSION_COOKIE } from './routes/http.ts';
+import { integrationRoutes } from './routes/integrations.ts';
 import { platformRoutes } from './routes/platform.ts';
 import { publicRoutes } from './routes/public.ts';
 import { recordRoutes } from './routes/records.ts';
@@ -59,8 +60,16 @@ export async function buildApp(s: Services, opts: AppOptions = {}): Promise<Fast
     }
   });
 
+  // Form posts are only accepted by webhook routes, which verify the provider's signature instead of a session.
+  app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string', bodyLimit: 64 * 1024 }, (_req, body, done) => {
+    const out: Record<string, string> = Object.create(null);
+    for (const [k, v] of new URLSearchParams(String(body))) out[k] = v;
+    done(null, out);
+  });
+
   app.addHook('onRequest', async (req) => {
     if (!req.url.startsWith('/api/')) return;
+    if (req.routeOptions.config?.webhook) return;
     // CSRF defence: browsers cannot send a cross-origin JSON request without a CORS preflight, which we never allow.
     if (BODY_METHODS.has(req.method) && !isJson(req.headers['content-type'])) {
       throw new AppError(415, 'unsupported_media_type', 'Send requests with "Content-Type: application/json"');
@@ -126,5 +135,6 @@ export async function buildApp(s: Services, opts: AppOptions = {}): Promise<Fast
   aiRoutes(app, s);
   analyticsRoutes(app, s);
   publicRoutes(app, s);
+  integrationRoutes(app, s);
   return app;
 }

@@ -40,6 +40,29 @@ project (v0.1), not a drop-in replacement for any of them. See [What is not ther
 | Work (monday.com-style)  | Projects and work items on boards, calendars and timelines                                                                                                                       |
 | People (Workday-style)   | Departments, employees, **org chart**, time off requests with manager approval, performance reviews, job requisitions and candidates                                             |
 
+### Email, calendars, phone and files
+
+- **Email from the record page**, with attachments. Replies stay in the customer's thread.
+  - People connect Gmail, Microsoft 365 or any IMAP mailbox in their settings, and send as themselves.
+  - Without a connected mailbox, email goes out through the organization's SMTP relay, and replies go to the sender.
+  - An email sent from somewhere else can be logged instead of sent.
+- **Inbox sync** logs emails exchanged with contacts, leads, accounts and other records with an email address on their
+  timelines, with their attachments.
+  - A new mailbox is read from two weeks back.
+  - Each person chooses whether mail from unknown senders is ignored, or creates a lead or a case.
+- **Calendar sync** with Google Calendar and Microsoft 365 imports meetings with people in the CRM, from a month back
+  to three months ahead.
+  - Meetings scheduled in titoForce can be added to the calendar, with invitations to the attendees.
+  - Meetings from any other calendar with an iCal address can be imported the same way, read-only.
+  - Each person can create a private calendar link to their meetings, calls and tasks for Google Calendar, Outlook or
+    Apple Calendar.
+- **Phone calls through Twilio**:
+  - Click to call: titoForce rings your phone first, then connects you once you press 1.
+  - Calls to the company number ring the owner of the caller's record. A missed call stays open as a call-back
+    reminder, and the person it rang is notified.
+  - Calls are logged with their direction, outcome and duration.
+- **Files** can be uploaded to any record and attached to emails.
+
 ### Automation and approvals
 
 - **Record-triggered automations** run when a record is created, updated, saved or deleted.
@@ -154,6 +177,53 @@ key is set. Agents rely on tool calling, so choose a model that supports it.
   `OPENAI_BASE_URL=http://localhost:11434/v1` and a `TITO_AI_MODEL` the server provides. Without
   `TITO_AI_PROVIDER`, agents stay offline.
 
+### Email, calendars and phone
+
+Providers are configured with environment variables. **Setup › Email, Calendar & Phone** shows which ones are
+configured, and the redirect and webhook URLs to register with each provider. People then connect their own mailboxes
+and calendars, and add their phone number, in **My settings**.
+
+| Variable                                                                            | Default                   | Purpose                                                                                                                                                |
+| ----------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `TITO_PUBLIC_URL`                                                                   | `http://localhost:<port>` | The address people and providers reach titoForce at, such as `https://crm.example.com`. Used in OAuth redirects, Twilio webhooks and calendar links    |
+| `TITO_SECRET_KEY`                                                                   | none                      | Encrypts stored credentials. **Required in production**, where accounts cannot be connected without it                                                 |
+| `TITO_SMTP_URL`, `TITO_EMAIL_FROM`                                                  | none                      | Organization relay for people without a connected mailbox, such as `smtps://user:pass@smtp.example.com:465` and `crm@example.com`                      |
+| `TITO_GOOGLE_CLIENT_ID`, `TITO_GOOGLE_CLIENT_SECRET`                                | none                      | Gmail and Google Calendar                                                                                                                              |
+| `TITO_MICROSOFT_CLIENT_ID`, `TITO_MICROSOFT_CLIENT_SECRET`, `TITO_MICROSOFT_TENANT` | none, none, `common`      | Outlook mail and calendar in Microsoft 365                                                                                                             |
+| `TITO_TWILIO_ACCOUNT_SID`, `TITO_TWILIO_AUTH_TOKEN`, `TITO_TWILIO_NUMBER`           | none                      | Phone calls. The number is in international format, such as `+14155550100`                                                                             |
+| `TITO_DEFAULT_CALLING_CODE`                                                         | none                      | Country calling code for phone numbers written without one, such as `1` or `44`. Without it, only numbers starting with `+` or `00` can be called      |
+| `TITO_SYNC_INTERVAL_MINUTES`                                                        | `5`                       | Minutes between background syncs of mailboxes and calendars. `0` turns background sync off                                                             |
+| `TITO_ATTACHMENT_MAX_MB`                                                            | `10`                      | Largest file that can be uploaded or attached. Larger attachments of synced emails are not saved. An email's attachments are limited to 20 MB in total |
+| `TITO_ALLOW_PRIVATE_NETWORK`                                                        | `false`                   | Lets people connect mail servers and calendar addresses on private networks. For local testing only                                                    |
+
+- **Secret key**: use a long random value, for example from `openssl rand -base64 32`, and keep it. If it changes,
+  stored credentials can no longer be decrypted, and people have to connect their accounts again. Without a key
+  outside production, credentials are encrypted with a generated key that is stored in the database.
+- **Google**: in Google Cloud, enable the Gmail API and the Google Calendar API. Create an OAuth client of type
+  "Web application" with the redirect URI `<TITO_PUBLIC_URL>/api/integrations/oauth/google/callback`. titoForce asks
+  for the `gmail.send`, `gmail.readonly` and `calendar.events` scopes. Google treats `gmail.readonly` as a restricted
+  scope: unless the OAuth app is internal to your Google Workspace organization, Google has to verify it before it
+  can be used widely.
+- **Microsoft 365**: register an app in Microsoft Entra ID with a client secret and the Web redirect URI
+  `<TITO_PUBLIC_URL>/api/integrations/oauth/microsoft/callback`. Add the delegated permissions `User.Read`,
+  `Mail.Read`, `Mail.Send`, `Calendars.ReadWrite` and `offline_access`. The default tenant, `common`, needs an app
+  that accepts accounts in any organizational directory. For an app limited to your organization, set
+  `TITO_MICROSOFT_TENANT` to your tenant ID. Emails sent through Microsoft 365 can be at most about 3 MB, including
+  attachments.
+- **IMAP mailboxes** need no server configuration. People enter their IMAP server, and optionally an SMTP server to
+  send email, and titoForce signs in to both before saving. Unless `TITO_ALLOW_PRIVATE_NETWORK` is set, passwords are
+  only sent over TLS, and only the standard mail ports are allowed: 143 and 993 for IMAP, and 25, 465, 587 and 2525
+  for SMTP.
+- **Twilio**: point the "A call comes in" webhook of a voice-capable number at
+  `<TITO_PUBLIC_URL>/api/telephony/twilio/voice` (HTTP POST). Twilio signs its requests over this URL, so
+  `TITO_PUBLIC_URL` must match the address configured in Twilio exactly.
+  - Click to call rings the person's own phone. Once they press 1, Twilio calls the customer from the company number.
+  - Calls to the company number ring the owner of the caller's record. Unknown callers, and owners without a phone
+    number, fall back to the first administrator.
+  - If voicemail answers a forwarded call, the call is logged as answered.
+- **Calendar links** list a person's meetings, calls and tasks from 90 days back to a year ahead. Calendar apps
+  refresh subscriptions on their own schedule, often only every few hours.
+
 ### PostgreSQL
 
 SQLite (built into Node.js) is the default. For PostgreSQL, set `TITO_DATABASE_URL=postgres://…`. The schema is
@@ -172,6 +242,7 @@ apps/
     src/analytics/   reports, dashboards
     src/ai/          agent runtime, tools, providers (OpenAI-compatible, Anthropic), offline rules engine
     src/modules/     lead conversion, forecast, org chart, web forms
+    src/integrations/ email (Gmail, Microsoft Graph, IMAP/SMTP), calendar sync and links, Twilio calls, files
     src/seed/        standard objects, roles, apps, agents and the demo company
     src/cli/         database reset (`npm run db:reset`)
   web/      React 19, Vite, Tailwind CSS 4, TanStack Query, Recharts
@@ -205,6 +276,9 @@ npm run e2e         # builds the web app, then runs Playwright against a fresh d
 - **PostgreSQL**: to run the server tests or the end-to-end tests against PostgreSQL, set
   `TITO_TEST_DATABASE_URL=postgres://…` or `E2E_DATABASE_URL=postgres://…`. Tests create their own schemas and drop
   them when they finish.
+- **Integrations** are tested without the real providers. Server tests replace Google, Microsoft and Twilio with a
+  mocked `fetch`, and mail servers with fakes. End-to-end tests use a local SMTP relay, a local calendar server and
+  webhooks signed like Twilio's (`e2e/fakes.ts`).
 - **CI**: GitHub Actions runs typechecks and tests on Node 24 and 26, the server tests on PostgreSQL 17, and the
   Playwright suite. Screenshots and the Playwright report are uploaded as artifacts.
 
@@ -227,6 +301,17 @@ npm run e2e         # builds the web app, then runs Playwright against a fresh d
   permission to people you trust.
 - **When an LLM provider is configured**, prompts that include CRM data are sent to that provider. Use the offline
   engine, or a self-hosted OpenAI-compatible model, if data must stay on your network.
+- **Connected accounts**: OAuth tokens, mailbox passwords and subscribed calendar addresses are encrypted with
+  AES-256-GCM, using a key derived from `TITO_SECRET_KEY`. The generated key used without it outside production sits
+  in the same database, so it does not protect a copied database.
+- **Mail servers and calendar addresses** that resolve to private, loopback, link-local or other reserved addresses
+  are refused, including redirect targets, so people cannot use titoForce to reach internal services.
+  `TITO_ALLOW_PRIVATE_NETWORK` lifts this check; do not set it in production.
+- **Twilio webhooks** are only accepted with a valid Twilio signature.
+- **Calendar links** contain a secret token and work without signing in: anyone with a link can see that person's
+  schedule. People can replace or turn off their link in My settings.
+- **Files** follow record permissions: people see the files of records they can read, and upload or delete files on
+  records they can edit. Files are stored in the database.
 
 ## What is not there yet
 
@@ -234,7 +319,8 @@ titoForce covers the core of each product area but none of these products in ful
 
 - **Lead conversion recovery**: if the server stops during conversion, its database claim remains. Before deleting the
   corresponding row from `lead_conversion_claims`, check the lead and any partially created records.
-- **Integrations**: email sending and inbox sync, calendar sync, telephony, file attachments.
+- **Integrations**: Twilio is the only telephony provider, and there is no SMS. Email has no templates, open or click
+  tracking, or shared team inboxes. Files are stored in the database rather than in object storage such as S3.
 - **Sales and finance**: multi-currency, territories, CPQ pricing rules, invoicing.
 - **Marketing**: email marketing campaigns and journeys.
 - **HR**: payroll, benefits and compensation planning.
