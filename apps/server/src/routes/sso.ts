@@ -73,6 +73,7 @@ export function ssoRoutes(app: FastifyInstance, s: Services): void {
   // SAML assertion consumer service. Identity providers post a form from their own site, so this route takes form
   // bodies and skips the JSON-only CSRF check; the response is checked against the request this browser started.
   void app.register(async (scoped) => {
+    scoped.removeContentTypeParser('application/x-www-form-urlencoded');
     scoped.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string', bodyLimit: 512 * 1024 }, (_req, body, done) => {
       const form = new URLSearchParams(String(body));
       done(null, { SAMLResponse: form.get('SAMLResponse') ?? '', RelayState: form.get('RelayState') ?? '' });

@@ -20,6 +20,8 @@ declare module 'fastify' {
     public?: boolean;
     /** Route accepts cross-site form posts and must do its own CSRF checks. */
     formPost?: boolean;
+    /** Signed provider callback (e.g. Twilio) that may post form-encoded bodies; implies `public`. */
+    webhook?: boolean;
   }
 }
 

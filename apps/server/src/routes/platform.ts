@@ -162,11 +162,10 @@ export function platformRoutes(app: FastifyInstance, s: Services): void {
 
   // ---------- users & roles ----------
 
-  // Everyone can see the user directory (owner pickers, @-assignments); administrators also see who uses two-factor sign-in.
   app.get('/api/users', async (req) => {
-    const p = principalOf(req);
+    const a = auth(req);
     const users = await s.users.listUsers(true);
-    if (p.permissions && !p.permissions.setup) return users;
+    if (!a.permissions.setup) return users.map((u) => (u.id === a.user.id ? u : { ...u, phone: undefined }));
     const mfa = await s.mfa.enabledUserIds();
     return users.map((u) => ({ ...u, mfaEnabled: mfa.has(u.id) }));
   });

@@ -42,6 +42,7 @@ const SetupAutomations = lazy(() => import('./pages/setup/Automations.tsx'));
 const SetupApprovalProcesses = lazy(() => import('./pages/setup/ApprovalProcesses.tsx'));
 const SetupAgents = lazy(() => import('./pages/setup/Agents.tsx'));
 const SetupRuns = lazy(() => import('./pages/setup/Runs.tsx'));
+const SetupIntegrations = lazy(() => import('./pages/setup/Integrations.tsx'));
 
 export const router = createBrowserRouter([
   { path: '/login', element: page(Login), errorElement: <RouteError /> },
@@ -86,6 +87,7 @@ export const router = createBrowserRouter([
               { path: 'approval-processes', element: page(SetupApprovalProcesses) },
               { path: 'agents', element: page(SetupAgents) },
               { path: 'runs', element: page(SetupRuns) },
+              { path: 'integrations', element: page(SetupIntegrations) },
             ],
           },
           { path: '*', element: <NotFound /> },

@@ -17,6 +17,7 @@ if (seed.generatedAdmin) {
 }
 
 await app.listen({ port: config.port, host: config.host });
+services.integrations.start();
 const ai = services.agents.status();
 app.log.info(`titoForce is running at http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`);
 app.log.info(`AI: ${ai.configured ? `${ai.provider} (${ai.model})` : 'offline rules engine (set OPENAI_API_KEY or ANTHROPIC_API_KEY to use an LLM)'}`);

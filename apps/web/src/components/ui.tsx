@@ -1,4 +1,4 @@
-import { LoaderCircle, type LucideIcon, X } from 'lucide-react';
+import { Check, Copy, LoaderCircle, type LucideIcon, X } from 'lucide-react';
 import { type ButtonHTMLAttributes, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { errorMessage } from '../api.ts';
@@ -288,6 +288,34 @@ export function MenuItem({ icon: IconCmp, children, onClick, danger }: { icon?: 
       {IconCmp && <IconCmp className="size-4 text-current opacity-70" aria-hidden />}
       {children}
     </button>
+  );
+}
+
+/** A read-only value (a link, a webhook URL…) with a button that copies it. */
+export function CopyField({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+    } catch {
+      // Without clipboard access (e.g. plain http), select the text so it can be copied by hand.
+      input.current?.select();
+    }
+  };
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <input ref={input} readOnly className="input font-mono text-xs" aria-label={label} value={value} onFocus={(e) => e.target.select()} />
+      <Button size="sm" icon={copied ? Check : Copy} onClick={() => void copy()} aria-label={`Copy ${label.toLowerCase()}`}>
+        {copied ? 'Copied' : 'Copy'}
+      </Button>
+    </div>
   );
 }
 

@@ -4,7 +4,8 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import pg from 'pg';
 
 export type Dialect = 'sqlite' | 'postgres';
-export type SqlParam = string | number | boolean | null | undefined;
+/** Uint8Array values are stored as BLOB (SQLite) or BYTEA (PostgreSQL). */
+export type SqlParam = string | number | boolean | null | undefined | Uint8Array;
 export type Row = Record<string, unknown>;
 
 /** Minimal async database abstraction implemented for SQLite and PostgreSQL. SQL uses `?` placeholders. */
@@ -289,4 +290,11 @@ export function parseJson<T>(value: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/** Normalizes a BLOB/BYTEA column value (Uint8Array from SQLite, Buffer from PostgreSQL) to a Buffer. */
+export function toBuffer(value: unknown): Buffer {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  throw new Error('Expected binary column value');
 }

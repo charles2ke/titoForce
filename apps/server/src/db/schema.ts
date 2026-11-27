@@ -1,4 +1,4 @@
-import type { Db } from './database.ts';
+import type { Db, Dialect } from './database.ts';
 
 /** Every table created by the migrations (used by the reset command; kept in sync by a test). */
 export const TABLES = [
@@ -29,12 +29,21 @@ export const TABLES = [
   'dashboards',
   'notifications',
   'settings',
+  'attachments',
+  'attachment_contents',
+  'contact_points',
+  'connected_accounts',
+  'oauth_states',
+  'email_messages',
+  'calls',
+  'calendar_events',
+  'calendar_feeds',
   'schema_migrations',
 ] as const;
 
 // Portable DDL: TEXT ids, ISO-8601 timestamps stored as TEXT, INTEGER booleans.
 // Record payloads use JSON (TEXT in SQLite, JSONB in PostgreSQL).
-const MIGRATIONS: { version: number; statements: (jsonType: string) => string[] }[] = [
+const MIGRATIONS: { version: number; statements: (jsonType: string, dialect: Dialect) => string[] }[] = [
   {
     version: 1,
     statements: (json) => [
@@ -257,9 +266,9 @@ const MIGRATIONS: { version: number; statements: (jsonType: string) => string[] 
   },
   {
     // Multi-factor authentication, single sign-on and sharing rules.
-    version: 3,
+    version: 4,
     statements: () => [
-      `CREATE TABLE user_mfa (
+      `CREATE TABLE IF NOT EXISTS user_mfa (
         user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         secret TEXT NOT NULL,
         enabled INTEGER NOT NULL DEFAULT 0,
@@ -269,7 +278,7 @@ const MIGRATIONS: { version: number; statements: (jsonType: string) => string[] 
         enabled_at TEXT
       )`,
       // Short-lived sign-in state (second-factor steps, SSO requests); ids are SHA-256 hashes of the tokens.
-      `CREATE TABLE auth_challenges (
+      `CREATE TABLE IF NOT EXISTS auth_challenges (
         id TEXT PRIMARY KEY,
         kind TEXT NOT NULL,
         user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
@@ -278,8 +287,8 @@ const MIGRATIONS: { version: number; statements: (jsonType: string) => string[] 
         expires_at TEXT NOT NULL,
         created_at TEXT NOT NULL
       )`,
-      `CREATE INDEX idx_auth_challenges_expires ON auth_challenges (expires_at)`,
-      `CREATE TABLE sso_providers (
+      `CREATE INDEX IF NOT EXISTS idx_auth_challenges_expires ON auth_challenges (expires_at)`,
+      `CREATE TABLE IF NOT EXISTS sso_providers (
         id TEXT PRIMARY KEY,
         type TEXT NOT NULL,
         name TEXT NOT NULL,
@@ -292,7 +301,7 @@ const MIGRATIONS: { version: number; statements: (jsonType: string) => string[] 
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )`,
-      `CREATE TABLE user_identities (
+      `CREATE TABLE IF NOT EXISTS user_identities (
         provider_id TEXT NOT NULL REFERENCES sso_providers(id) ON DELETE CASCADE,
         subject TEXT NOT NULL,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -301,8 +310,8 @@ const MIGRATIONS: { version: number; statements: (jsonType: string) => string[] 
         last_login_at TEXT,
         PRIMARY KEY (provider_id, subject)
       )`,
-      `CREATE INDEX idx_user_identities_user ON user_identities (user_id)`,
-      `CREATE TABLE sharing_rules (
+      `CREATE INDEX IF NOT EXISTS idx_user_identities_user ON user_identities (user_id)`,
+      `CREATE TABLE IF NOT EXISTS sharing_rules (
         id TEXT PRIMARY KEY,
         object_api_name TEXT NOT NULL,
         name TEXT NOT NULL,
@@ -316,7 +325,129 @@ const MIGRATIONS: { version: number; statements: (jsonType: string) => string[] 
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )`,
-      `CREATE INDEX idx_sharing_rules_object ON sharing_rules (object_api_name)`,
+      `CREATE INDEX IF NOT EXISTS idx_sharing_rules_object ON sharing_rules (object_api_name)`,
+    ],
+  },
+  {
+    // Integrations: file attachments, email, calendar and telephony.
+    version: 3,
+    statements: (json, dialect) => [
+      `ALTER TABLE users ADD COLUMN phone TEXT`,
+      `CREATE TABLE attachments (
+        id TEXT PRIMARY KEY,
+        record_id TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+        file_name TEXT NOT NULL,
+        content_type TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        source TEXT NOT NULL,
+        created_by TEXT,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX idx_attachments_record ON attachments (record_id, created_at)`,
+      `CREATE TABLE attachment_contents (
+        attachment_id TEXT PRIMARY KEY REFERENCES attachments(id) ON DELETE CASCADE,
+        data ${dialect === 'postgres' ? 'BYTEA' : 'BLOB'} NOT NULL
+      )`,
+      // Email addresses and phone numbers of records, for matching mail, meetings and calls.
+      `CREATE TABLE contact_points (
+        record_id TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+        object_api_name TEXT NOT NULL,
+        field TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        value TEXT NOT NULL,
+        PRIMARY KEY (record_id, field)
+      )`,
+      `CREATE INDEX idx_contact_points_value ON contact_points (kind, value)`,
+      `CREATE TABLE connected_accounts (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        label TEXT NOT NULL,
+        address TEXT,
+        settings ${json} NOT NULL,
+        credentials TEXT,
+        sync_state ${json} NOT NULL,
+        status TEXT NOT NULL,
+        last_sync_at TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX idx_connected_accounts_user ON connected_accounts (user_id)`,
+      `CREATE TABLE oauth_states (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        code_verifier TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      // No foreign key on activity_id: when an email activity is deleted, its row stays as a content-free tombstone,
+      // so the message is not logged again by a later sync.
+      `CREATE TABLE email_messages (
+        id TEXT PRIMARY KEY,
+        activity_id TEXT,
+        account_id TEXT,
+        user_id TEXT,
+        direction TEXT NOT NULL,
+        status TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        thread_key TEXT,
+        in_reply_to TEXT,
+        from_address TEXT NOT NULL,
+        from_name TEXT,
+        to_addresses ${json} NOT NULL,
+        cc_addresses ${json} NOT NULL,
+        subject TEXT NOT NULL,
+        text_body TEXT NOT NULL,
+        sent_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX idx_email_messages_activity ON email_messages (activity_id)`,
+      // One row per message across all mailboxes: synced copies of a message are logged once.
+      `CREATE UNIQUE INDEX idx_email_messages_message_id ON email_messages (message_id)`,
+      `CREATE INDEX idx_email_messages_user ON email_messages (user_id, sent_at)`,
+      `CREATE TABLE calls (
+        id TEXT PRIMARY KEY,
+        activity_id TEXT REFERENCES records(id) ON DELETE SET NULL,
+        user_id TEXT,
+        record_id TEXT,
+        direction TEXT NOT NULL,
+        status TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        provider_call_id TEXT,
+        from_number TEXT,
+        to_number TEXT,
+        duration_seconds INTEGER,
+        outcome TEXT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX idx_calls_activity ON calls (activity_id)`,
+      `CREATE INDEX idx_calls_provider ON calls (provider, provider_call_id)`,
+      // Calendar events logged as activities. No foreign keys: rows outlive deleted activities (tombstones) and removed
+      // accounts (account_id cleared), so the same events are not imported again.
+      `CREATE TABLE calendar_events (
+        id TEXT PRIMARY KEY,
+        account_id TEXT,
+        user_id TEXT NOT NULL,
+        external_id TEXT NOT NULL,
+        activity_id TEXT,
+        direction TEXT NOT NULL,
+        fingerprint TEXT,
+        options ${json} NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE UNIQUE INDEX idx_calendar_events_account ON calendar_events (account_id, external_id)`,
+      `CREATE INDEX idx_calendar_events_activity ON calendar_events (activity_id)`,
+      `CREATE INDEX idx_calendar_events_external ON calendar_events (external_id)`,
+      `CREATE TABLE calendar_feeds (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+      )`,
     ],
   },
 ];
@@ -325,10 +456,22 @@ export async function migrate(db: Db): Promise<void> {
   await db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`);
   const applied = new Set((await db.all<{ version: number }>('SELECT version FROM schema_migrations')).map((r) => Number(r.version)));
   const jsonType = db.dialect === 'postgres' ? 'JSONB' : 'TEXT';
-  for (const m of MIGRATIONS) {
+  // Version 3 existed independently on the security branch before integrations reached main.
+  if (applied.has(3) && !applied.has(4)) {
+    const table = db.dialect === 'postgres'
+      ? await db.get("SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'attachments'")
+      : await db.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'attachments'");
+    if (!table) {
+      const integration = MIGRATIONS.find((m) => m.version === 3)!;
+      await db.transaction(async (tx) => {
+        for (const stmt of integration.statements(jsonType, db.dialect)) await tx.exec(stmt);
+      });
+    }
+  }
+  for (const m of [...MIGRATIONS].sort((a, b) => a.version - b.version)) {
     if (applied.has(m.version)) continue;
     await db.transaction(async (tx) => {
-      for (const stmt of m.statements(jsonType)) await tx.exec(stmt);
+      for (const stmt of m.statements(jsonType, db.dialect)) await tx.exec(stmt);
       await tx.run('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)', [m.version, new Date().toISOString()]);
     });
   }

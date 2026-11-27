@@ -1,14 +1,17 @@
-import type { CrmRecord, ObjectDef, RefMap, TimelineItem } from '@titoforce/shared';
+import type { CallDetails, CrmRecord, EmailDetails, MeetingDetails, ObjectDef, RefMap, TimelineItem } from '@titoforce/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Circle, CircleCheck, History, Mail, Phone, SquareCheckBig, StickyNote, Users, Workflow } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { ArrowDownLeft, ArrowUpRight, Bot, Circle, CircleCheck, History, Mail, MapPin, Paperclip, Phone, Reply, SquareCheckBig, StickyNote, Users, Workflow } from 'lucide-react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { api, errorMessage } from '../../api.ts';
-import { formatDate, formatDateTime, plural, relativeTime, todayIso } from '../../lib/format.ts';
+import { formatDate, formatDateTime, parseDate, plural, relativeTime, todayIso } from '../../lib/format.ts';
 import { invalidateRecordData, useObjectDef, usePermissions } from '../../lib/hooks.ts';
+import { CALENDAR_LABEL, formatBytes, formatDuration } from '../../lib/integrations.ts';
 import { Markdown } from '../../lib/markdown.tsx';
 import { useToast } from '../feedback.tsx';
 import { Badge, Button, Card, cx, ErrorBanner, Loading } from '../ui.tsx';
+import { CallComposer, type EmailDraft, EmailComposer, MeetingComposer } from './ActivityComposers.tsx';
+import { downloadUrl } from './RecordFiles.tsx';
 
 const TYPE_ICON: Record<string, typeof Phone> = { Call: Phone, Email: Mail, Meeting: Users, Task: SquareCheckBig, Note: StickyNote };
 const TYPE_TINT: Record<string, string> = {
@@ -32,12 +35,50 @@ function display(v: unknown): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? formatDate(s) : /^\d{4}-\d{2}-\d{2}T/.test(s) ? formatDateTime(s) : s;
 }
 
-function Composer({ record }: { record: CrmRecord }) {
+function Composer({ def, record, draft, draftKey, onCancelReply }: { def: ObjectDef; record: CrmRecord; draft: EmailDraft | null; draftKey: number; onCancelReply: () => void }) {
   const { def: activity } = useObjectDef('activity');
-  const qc = useQueryClient();
-  const toast = useToast();
   const types = activity?.fields.find((f) => f.apiName === 'type')?.options?.map((o) => o.value) ?? ['Call', 'Email', 'Meeting', 'Task', 'Note'];
   const [type, setType] = useState(types.includes('Call') ? 'Call' : types[0]!);
+  useEffect(() => {
+    if (draft) setType('Email');
+  }, [draft]);
+  return (
+    <div className="space-y-2">
+      <div role="radiogroup" aria-label="Activity type" className="flex flex-wrap gap-1">
+        {types.map((t) => {
+          const IconCmp = TYPE_ICON[t] ?? StickyNote;
+          return (
+            <button
+              key={t}
+              type="button"
+              role="radio"
+              aria-checked={type === t}
+              onClick={() => setType(t)}
+              className={cx('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium', type === t ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}
+            >
+              <IconCmp className="size-3.5" aria-hidden />
+              {t}
+            </button>
+          );
+        })}
+      </div>
+      {type === 'Email' ? (
+        <EmailComposer key={draftKey} def={def} record={record} draft={draft} onCancelReply={onCancelReply} />
+      ) : type === 'Call' ? (
+        <CallComposer def={def} record={record} />
+      ) : type === 'Meeting' ? (
+        <MeetingComposer def={def} record={record} />
+      ) : (
+        <ActivityComposer key={type} type={type} record={record} />
+      )}
+    </div>
+  );
+}
+
+/** Tasks, notes and custom activity types. */
+function ActivityComposer({ type, record }: { type: string; record: CrmRecord }) {
+  const qc = useQueryClient();
+  const toast = useToast();
   const [subject, setSubject] = useState('');
   const [due, setDue] = useState(todayIso());
   const [description, setDescription] = useState('');
@@ -67,24 +108,6 @@ function Composer({ record }: { record: CrmRecord }) {
   };
   return (
     <form onSubmit={submit} className="space-y-2" aria-label="Log activity">
-      <div role="radiogroup" aria-label="Activity type" className="flex flex-wrap gap-1">
-        {types.map((t) => {
-          const IconCmp = TYPE_ICON[t] ?? StickyNote;
-          return (
-            <button
-              key={t}
-              type="button"
-              role="radio"
-              aria-checked={type === t}
-              onClick={() => setType(t)}
-              className={cx('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium', type === t ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}
-            >
-              <IconCmp className="size-3.5" aria-hidden />
-              {t}
-            </button>
-          );
-        })}
-      </div>
       <ErrorBanner error={create.error} />
       <input className="input" aria-label="Subject" placeholder={`${type} subject`} maxLength={255} value={subject} onChange={(e) => setSubject(e.target.value)} />
       <textarea className="input min-h-16" aria-label="Notes" placeholder={planned ? 'Details (optional)' : 'What happened? (optional)'} value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -105,7 +128,7 @@ function Composer({ record }: { record: CrmRecord }) {
   );
 }
 
-function ActivityItem({ item }: { item: TimelineItem }) {
+function ActivityItem({ item, onReply }: { item: TimelineItem; onReply?: (item: TimelineItem) => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const IconCmp = TYPE_ICON[item.activityType ?? ''] ?? StickyNote;
@@ -140,15 +163,117 @@ function ActivityItem({ item }: { item: TimelineItem }) {
         </div>
         <p className="mt-0.5 text-xs text-slate-500">
           {item.activityType} · {item.actorName ?? 'Someone'} · <span title={formatDateTime(item.at)}>{relativeTime(item.at)}</span>
-          {item.dueDate && (
+          {item.dueDate && !item.meeting?.start && (
             <span className={cx('ml-1', overdue && 'font-medium text-rose-600')}>
               · {overdue ? 'Overdue, due' : 'Due'} {formatDate(item.dueDate)}
             </span>
           )}
         </p>
+        {item.email && <EmailMeta email={item.email} />}
+        {item.call && <CallMeta call={item.call} />}
+        {item.meeting && <MeetingMeta meeting={item.meeting} />}
         {item.body && <p className="mt-1 line-clamp-3 text-sm whitespace-pre-wrap text-slate-600">{item.body}</p>}
+        {item.attachments && item.attachments.length > 0 && (
+          <ul className="mt-1.5 flex flex-wrap gap-1" aria-label={`Attachments of ${item.title}`}>
+            {item.attachments.map((a) => (
+              <li key={a.id} className="max-w-full">
+                <a
+                  href={downloadUrl(a.id)}
+                  download={a.fileName}
+                  className="inline-flex max-w-full items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-200"
+                >
+                  <Paperclip className="size-3 shrink-0" aria-hidden />
+                  <span className="truncate">{a.fileName}</span>
+                  <span className="text-slate-400">{formatBytes(a.size)}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+        {item.email && onReply && (
+          <button type="button" onClick={() => onReply(item)} className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline">
+            <Reply className="size-3.5" aria-hidden />
+            Reply<span className="sr-only"> to “{item.title}”</span>
+          </button>
+        )}
       </div>
     </>
+  );
+}
+
+const EMAIL_STATUS: Record<EmailDetails['status'], { label: string; color: string }> = {
+  sent: { label: 'Sent', color: 'green' },
+  received: { label: 'Received', color: 'blue' },
+  logged: { label: 'Logged', color: 'gray' },
+};
+
+function EmailMeta({ email }: { email: EmailDetails }) {
+  const inbound = email.direction === 'inbound';
+  const status = EMAIL_STATUS[email.status];
+  const who = inbound ? `From ${email.fromName ? `${email.fromName} <${email.from}>` : email.from}` : `To ${[...email.to, ...email.cc].join(', ')}`;
+  return (
+    <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
+      {inbound ? <ArrowDownLeft className="size-3.5 shrink-0 text-teal-600" aria-label="Inbound" /> : <ArrowUpRight className="size-3.5 shrink-0 text-teal-600" aria-label="Outbound" />}
+      <span className="min-w-0 truncate" title={who}>
+        {who}
+      </span>
+      <Badge color={status.color}>{status.label}</Badge>
+    </p>
+  );
+}
+
+const LIVE_CALL: Partial<Record<CallDetails['status'], string>> = { queued: 'Calling', ringing: 'Ringing', 'in-progress': 'In progress' };
+
+function CallMeta({ call }: { call: CallDetails }) {
+  const number = call.direction === 'inbound' ? call.from : call.to;
+  const parts = [call.direction === 'inbound' ? 'Inbound' : 'Outbound', call.outcome, call.durationSeconds ? formatDuration(call.durationSeconds) : null, number].filter(Boolean);
+  const live = LIVE_CALL[call.status];
+  return (
+    <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
+      {call.direction === 'inbound' ? <ArrowDownLeft className="size-3.5 shrink-0 text-sky-600" aria-hidden /> : <ArrowUpRight className="size-3.5 shrink-0 text-sky-600" aria-hidden />}
+      <span className="min-w-0 truncate">{parts.join(' · ')}</span>
+      {live && <Badge color="blue">{live}</Badge>}
+    </p>
+  );
+}
+
+function meetingTime(start: string, end: string | null): string {
+  const s = parseDate(start);
+  if (!s) return start;
+  const day = (d: Date) => d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+  const time = (d: Date) => d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const e = end ? parseDate(end) : null;
+  if (!e) return `${day(s)}, ${time(s)}`;
+  return s.toDateString() === e.toDateString() ? `${day(s)}, ${time(s)} – ${time(e)}` : `${day(s)}, ${time(s)} – ${day(e)}, ${time(e)}`;
+}
+
+function MeetingMeta({ meeting }: { meeting: MeetingDetails }) {
+  const attendees = meeting.attendees.length;
+  return (
+    <div className="mt-1 space-y-0.5 text-xs text-slate-500">
+      {meeting.start && (
+        <p className="flex flex-wrap items-center gap-1.5">
+          <span>{meetingTime(meeting.start, meeting.end)}</span>
+          {meeting.calendar && <Badge color="purple">{CALENDAR_LABEL[meeting.calendar.provider]}</Badge>}
+        </p>
+      )}
+      {(meeting.location || attendees > 0) && (
+        <p className="flex min-w-0 items-center gap-1.5">
+          {meeting.location && (
+            <>
+              <MapPin className="size-3.5 shrink-0" aria-hidden />
+              <span className="min-w-0 truncate">{meeting.location}</span>
+            </>
+          )}
+          {attendees > 0 && (
+            <span className="shrink-0" title={meeting.attendees.join(', ')}>
+              {meeting.location && '· '}
+              {plural(attendees, 'attendee')}
+            </span>
+          )}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -225,6 +350,9 @@ function AgentItem({ item }: { item: TimelineItem }) {
 export function ActivityPanel({ def, record }: { def: ObjectDef; record: CrmRecord }) {
   const perms = usePermissions();
   const [filter, setFilter] = useState<Filter>('all');
+  const [draft, setDraft] = useState<EmailDraft | null>(null);
+  const [draftKey, setDraftKey] = useState(0);
+  const composer = useRef<HTMLDivElement>(null);
   const timeline = useQuery({
     queryKey: ['timeline', record.id],
     queryFn: () => api.get<{ items: TimelineItem[]; refs: RefMap }>(`/api/records/${def.apiName}/${record.id}/timeline`),
@@ -239,16 +367,32 @@ export function ActivityPanel({ def, record }: { def: ObjectDef; record: CrmReco
     { id: 'history', label: 'Changes' },
     { id: 'agent', label: 'AI' },
   ];
+  const reply = (item: TimelineItem) => {
+    const email = item.email!;
+    const subject = email.subject || item.title;
+    setDraft({
+      to: email.direction === 'inbound' ? [email.from] : [...email.to, ...email.cc],
+      subject: /^re:/i.test(subject) ? subject : `Re: ${subject}`,
+      inReplyTo: item.recordId ?? item.id,
+      replyingTo: subject,
+    });
+    setDraftKey((k) => k + 1);
+    composer.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+  const cancelReply = () => {
+    setDraft(null);
+    setDraftKey((k) => k + 1);
+  };
   const row = (i: TimelineItem) => (
     <li key={`${i.kind}:${i.id}`} className="flex gap-3 py-3">
-      {i.kind === 'activity' ? <ActivityItem item={i} /> : i.kind === 'agent' ? <AgentItem item={i} /> : <HistoryItem item={i} />}
+      {i.kind === 'activity' ? <ActivityItem item={i} onReply={canLog ? reply : undefined} /> : i.kind === 'agent' ? <AgentItem item={i} /> : <HistoryItem item={i} />}
     </li>
   );
   return (
     <Card title="Activity" bodyClassName="p-4">
       {canLog && (
-        <div className="mb-4 border-b border-slate-100 pb-4">
-          <Composer record={record} />
+        <div ref={composer} className="mb-4 scroll-mt-4 border-b border-slate-100 pb-4">
+          <Composer def={def} record={record} draft={draft} draftKey={draftKey} onCancelReply={cancelReply} />
         </div>
       )}
       <div className="mb-1 flex flex-wrap gap-1" role="tablist" aria-label="Show">

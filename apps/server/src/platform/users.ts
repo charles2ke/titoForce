@@ -59,11 +59,12 @@ interface UserRow {
   active: number;
   is_agent: number;
   avatar_color: string;
+  phone: string | null;
   created_at: string;
 }
 
 const USER_SELECT = `SELECT u.id, u.email, u.name, u.title, u.password_hash, u.role_id, r.name AS role_name, r.permissions,
-  u.active, u.is_agent, u.avatar_color, u.created_at FROM users u JOIN roles r ON r.id = u.role_id`;
+  u.active, u.is_agent, u.avatar_color, u.phone, u.created_at FROM users u JOIN roles r ON r.id = u.role_id`;
 
 function toUser(row: UserRow): UserDTO {
   return {
@@ -76,6 +77,7 @@ function toUser(row: UserRow): UserDTO {
     active: !!Number(row.active),
     isAgent: !!Number(row.is_agent),
     avatarColor: row.avatar_color,
+    phone: row.phone ?? null,
     createdAt: row.created_at,
   };
 }
@@ -232,6 +234,16 @@ export class UserService {
       await this.challenges.revokeForUser(id);
     }
     return (await this.getUser(id))!;
+  }
+
+  /** The user's own phone number, used to bridge click-to-call and forward inbound calls. */
+  async setPhone(userId: string, phone: string | null): Promise<UserDTO> {
+    const value = phone?.trim() || null;
+    if (value && !/^\+?[\d\s().-]{7,25}$/.test(value)) throw badRequest('Enter a phone number in international format, e.g. +1 415 555 0100');
+    await this.db.run('UPDATE users SET phone = ? WHERE id = ?', [value, userId]);
+    const user = await this.getUser(userId);
+    if (!user) throw notFound('User not found');
+    return user;
   }
 
   /**

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { TABLES } from '../src/db/schema.ts';
+import { SqliteDb } from '../src/db/database.ts';
+import { migrate, TABLES } from '../src/db/schema.ts';
 import { prepareCsvImport } from '../src/platform/csv-import.ts';
 import type { Principal } from '../src/platform/principal.ts';
 import { seedIfNeeded } from '../src/seed/index.ts';
@@ -32,6 +33,30 @@ async function rejects(promise: Promise<unknown>, status: number, code?: string)
 }
 
 describe('database', () => {
+  it.each(['integrations', 'security'])('upgrades a version 3 database from %s', async (branch) => {
+    const db = new SqliteDb(':memory:');
+    try {
+      await migrate(db);
+      if (branch === 'security') {
+        for (const table of ['attachment_contents', 'attachments', 'contact_points', 'connected_accounts', 'oauth_states', 'email_messages', 'calls', 'calendar_events', 'calendar_feeds']) {
+          await db.exec(`DROP TABLE ${table}`);
+        }
+        await db.exec('ALTER TABLE users DROP COLUMN phone');
+      } else {
+        for (const table of ['user_identities', 'sso_providers', 'auth_challenges', 'user_mfa', 'sharing_rules']) await db.exec(`DROP TABLE ${table}`);
+      }
+      await db.run('DELETE FROM schema_migrations WHERE version = ?', [4]);
+      await migrate(db);
+      await migrate(db);
+      const tables = await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
+      expect(tables.map((row) => row.name).sort()).toEqual([...TABLES].sort());
+      const columns = await db.all<{ name: string }>('PRAGMA table_info(users)');
+      expect(columns.some((column) => column.name === 'phone')).toBe(true);
+    } finally {
+      await db.close();
+    }
+  });
+
   it('TABLES lists exactly the tables the migrations create', async () => {
     const sql =
       s.db.dialect === 'postgres'

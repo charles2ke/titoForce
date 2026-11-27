@@ -6,6 +6,8 @@ import { AutomationService } from './automation/engine.ts';
 import type { Config } from './config.ts';
 import { type Db, openDatabase } from './db/database.ts';
 import { migrate } from './db/schema.ts';
+import { IntegrationService } from './integrations/index.ts';
+import type { ImapFactory, TransportFactory } from './integrations/types.ts';
 import { FormsService } from './modules/forms.ts';
 import { HrService } from './modules/hr.ts';
 import { SalesService } from './modules/sales.ts';
@@ -46,13 +48,17 @@ export interface Services {
   hr: HrService;
   forms: FormsService;
   agents: AgentService;
+  integrations: IntegrationService;
   close(): Promise<void>;
 }
 
 export interface ServiceOptions {
-  /** Used for LLM, webhook and single sign-on calls (tests inject fakes). */
+  /** Used for LLM, webhook, single sign-on and integration API calls (tests inject fakes). */
   fetchImpl?: typeof fetch;
   jobConcurrency?: number;
+  /** SMTP and IMAP clients (tests inject fakes). */
+  mailTransport?: TransportFactory;
+  imapFactory?: ImapFactory;
 }
 
 export async function createServices(config: Config, opts: ServiceOptions = {}): Promise<Services> {
@@ -92,6 +98,11 @@ export async function createServices(config: Config, opts: ServiceOptions = {}):
   executor.launchAgent = (args) => agents.launchForRecord(args);
   automations.agentIds = () => agents.ids();
   await agents.recoverInterrupted();
+  const integrations = new IntegrationService(
+    { db, cfg: config.integrations, metadata, records, users, notifications, jobs, events },
+    { fetchImpl: opts.fetchImpl, mailTransport: opts.mailTransport, imapFactory: opts.imapFactory, warn: (message) => console.warn(message) },
+  );
+  await integrations.init();
 
   return {
     config,
@@ -117,7 +128,9 @@ export async function createServices(config: Config, opts: ServiceOptions = {}):
     hr,
     forms,
     agents,
+    integrations,
     async close() {
+      integrations.stop();
       await jobs.drain();
       await db.close();
     },

@@ -1,4 +1,4 @@
-import { FIELD_TYPES, FILTER_OPERATORS, PALETTE } from '@titoforce/shared';
+import { CALL_OUTCOMES, FIELD_TYPES, FILTER_OPERATORS, PALETTE } from '@titoforce/shared';
 import { z } from 'zod';
 
 // Request-shape validation. Services perform the semantic validation (known fields, permissions, …).
@@ -260,3 +260,78 @@ export const dashboard = z.object({
 export const convertLead = z.object({ createOpportunity: z.boolean().optional(), opportunityName: z.string().max(255).optional(), accountId: id.optional() });
 export const importCsv = z.object({ csv: z.string().min(1).max(5_000_000) });
 export const markRead = z.object({ ids: z.array(id).max(500).optional() });
+
+// ---------- integrations ----------
+
+const emailAddress = z.string().min(3).max(254);
+const unmatched = z.enum(['ignore', 'lead', 'case']);
+const port = z.number().int().min(1).max(65535);
+const dateTime = z.string().min(1).max(40);
+
+/** File sizes are checked by the attachment service (and bounded by the route's body limit). */
+export const uploadFile = z.object({ fileName: z.string().min(1).max(255), contentType: z.string().max(255).nullish(), data: z.string().min(1) });
+
+export const sendEmail = z.object({
+  recordId: id,
+  to: z.array(emailAddress).max(50),
+  cc: z.array(emailAddress).max(50).optional(),
+  subject: shortText,
+  body: z.string().max(100_000),
+  accountId: id.nullish(),
+  inReplyTo: id.nullish(),
+  files: z.array(uploadFile).max(10).optional(),
+  attachmentIds: z.array(id).max(10).optional(),
+  logOnly: z.boolean().optional(),
+});
+
+/** An empty password keeps the stored one when updating a mailbox. */
+export const imapAccount = z.object({
+  label: z.string().max(80).nullish(),
+  address: emailAddress,
+  username: z.string().max(254).nullish(),
+  password: z.string().max(1000),
+  imapHost: z.string().min(1).max(255),
+  imapPort: port,
+  imapSecure: z.boolean(),
+  smtpHost: z.string().max(255).nullish(),
+  smtpPort: port.nullish(),
+  smtpSecure: z.boolean().nullish(),
+  syncEmail: z.boolean().optional(),
+  unmatched: unmatched.optional(),
+});
+
+export const icsAccount = z.object({ url: z.string().min(1).max(2000), label: z.string().max(80).nullish() });
+
+export const updateAccount = z.object({
+  label: z.string().min(1).max(80).optional(),
+  syncEmail: z.boolean().optional(),
+  syncCalendar: z.boolean().optional(),
+  unmatched: unmatched.optional(),
+});
+
+export const phone = z.object({ phone: z.string().max(40).nullable() });
+
+export const meeting = z.object({
+  recordId: id,
+  subject: z.string().min(1).max(255),
+  start: dateTime,
+  end: dateTime,
+  location: z.string().max(255).nullish(),
+  description: z.string().max(32_000).nullish(),
+  attendees: z.array(emailAddress).max(50).optional(),
+  accountId: id.nullish(),
+  sendInvites: z.boolean().optional(),
+});
+
+export const startCall = z.object({ recordId: id, phone: z.string().min(1).max(40) });
+
+export const logCall = z.object({
+  recordId: id,
+  direction: z.enum(['inbound', 'outbound']),
+  subject: shortText.nullish(),
+  outcome: z.enum(CALL_OUTCOMES).nullish(),
+  durationSeconds: z.number().int().min(0).max(86_400).nullish(),
+  notes: z.string().max(32_000).nullish(),
+  phone: z.string().max(40).nullish(),
+  at: dateTime.nullish(),
+});

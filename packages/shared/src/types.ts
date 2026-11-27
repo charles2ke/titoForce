@@ -248,6 +248,8 @@ export interface UserDTO {
   active: boolean;
   isAgent: boolean;
   avatarColor: string;
+  /** Phone used to bridge click-to-call and forward inbound calls. */
+  phone?: string | null;
   createdAt: string;
   /** Only included for administrators. */
   mfaEnabled?: boolean;
@@ -654,6 +656,255 @@ export interface TimelineItem {
   status?: string;
   dueDate?: string | null;
   changes?: { field: string; label: string; from: unknown; to: unknown }[];
+  /** Activities logged from email, calls and meetings carry their details. */
+  email?: EmailDetails;
+  call?: CallDetails;
+  meeting?: MeetingDetails;
+  attachments?: AttachmentRef[];
+}
+
+// ---------- Integrations ----------
+
+export type IntegrationProvider = 'google' | 'microsoft' | 'imap' | 'ics';
+
+/** What to do with synced mail from senders that match no record. */
+export type UnmatchedMailAction = 'ignore' | 'lead' | 'case';
+
+export interface ConnectedAccountSettings {
+  syncEmail: boolean;
+  syncCalendar: boolean;
+  unmatched: UnmatchedMailAction;
+  /** IMAP/SMTP server settings (the password is stored encrypted, never returned). */
+  imapHost?: string;
+  imapPort?: number;
+  imapSecure?: boolean;
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpSecure?: boolean;
+  username?: string;
+  /** Host of a subscribed calendar URL (the full URL is a secret and stored encrypted). */
+  feedHost?: string;
+}
+
+export interface ConnectedAccountDTO {
+  id: string;
+  provider: IntegrationProvider;
+  label: string;
+  address: string | null;
+  /** What this account can do: send and sync mail, sync calendars. */
+  capabilities: { sendEmail: boolean; syncEmail: boolean; calendar: boolean; exportEvents: boolean };
+  settings: ConnectedAccountSettings;
+  status: 'active' | 'error';
+  syncing: boolean;
+  lastSyncAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+}
+
+export interface MailSyncStats {
+  logged: number;
+  duplicates: number;
+  skipped: number;
+}
+
+export interface CalendarSyncStats {
+  imported: number;
+  updated: number;
+  skipped: number;
+}
+
+/** What one sync of a connected account did (null: that part was not synced). */
+export interface SyncResult {
+  mail: MailSyncStats | null;
+  calendar: CalendarSyncStats | null;
+  error: string | null;
+}
+
+export interface SyncResponse {
+  account: ConnectedAccountDTO;
+  result: SyncResult;
+}
+
+export interface IntegrationStatus {
+  /** How mail sent by the current user is delivered: their own connected account, the organization relay, or only logged. */
+  email: { mode: 'account' | 'relay' | 'log'; accountId: string | null; from: string | null };
+  oauth: { google: boolean; microsoft: boolean };
+  /** Click-to-call needs Twilio on the server and the user's own phone number. */
+  telephony: { twilio: boolean; phone: string | null; ready: boolean; number: string | null };
+  calendarFeed: { enabled: boolean };
+  syncIntervalMinutes: number;
+  attachmentMaxBytes: number;
+  allowPrivateNetwork: boolean;
+}
+
+export interface AdminIntegrationStatus {
+  publicUrl: string;
+  secretKey: boolean;
+  smtpRelay: { configured: boolean; from: string | null };
+  google: boolean;
+  microsoft: boolean;
+  twilio: { configured: boolean; number: string | null; inboundWebhook: string; statusWebhook: string };
+  oauthRedirects: { google: string; microsoft: string };
+  syncIntervalMinutes: number;
+  attachmentMaxBytes: number;
+  accounts: { provider: IntegrationProvider; total: number; failing: number }[];
+}
+
+export interface AttachmentRef {
+  id: string;
+  fileName: string;
+  contentType: string;
+  size: number;
+}
+
+export interface AttachmentDTO extends AttachmentRef {
+  recordId: string;
+  source: 'upload' | 'email';
+  createdBy: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  /** Set when the file belongs to an activity of the record (e.g. an email attachment) rather than to the record itself. */
+  activity: { id: string; name: string } | null;
+}
+
+export interface EmailDetails {
+  direction: 'inbound' | 'outbound';
+  /** sent: delivered to the mail server; received: synced from a mailbox; logged: recorded only, not delivered. */
+  status: 'sent' | 'received' | 'logged';
+  from: string;
+  fromName: string | null;
+  to: string[];
+  cc: string[];
+  subject: string;
+  sentAt: string;
+  messageId: string | null;
+  provider: string;
+}
+
+export type CallStatus = 'queued' | 'ringing' | 'in-progress' | 'completed' | 'busy' | 'no-answer' | 'failed' | 'canceled' | 'logged';
+
+export interface CallDetails {
+  id: string;
+  direction: 'inbound' | 'outbound';
+  status: CallStatus;
+  provider: 'twilio' | 'manual';
+  from: string | null;
+  to: string | null;
+  durationSeconds: number | null;
+  outcome: string | null;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+export interface MeetingDetails {
+  start: string | null;
+  end: string | null;
+  location: string | null;
+  attendees: string[];
+  /** Calendar the meeting is synced with, if any. */
+  calendar: { provider: IntegrationProvider; direction: 'import' | 'export' } | null;
+}
+
+export const CALL_OUTCOMES = ['Connected', 'Left voicemail', 'No answer', 'Busy', 'Wrong number'] as const;
+
+export interface UploadFile {
+  fileName: string;
+  contentType?: string | null;
+  /** Base64 (a data: URL is accepted). */
+  data: string;
+}
+
+export interface SendEmailRequest {
+  /** The record the email is logged against. */
+  recordId: string;
+  to: string[];
+  cc?: string[];
+  subject: string;
+  body: string;
+  /** Mailbox to send from (default: the user's first mailbox that can send, then the organization relay). */
+  accountId?: string | null;
+  /** Activity id of the email being answered (sets the threading headers). */
+  inReplyTo?: string | null;
+  files?: UploadFile[];
+  /** Files already attached to records the user can read. */
+  attachmentIds?: string[];
+  /** Record the email without sending it. */
+  logOnly?: boolean;
+}
+
+export interface SendEmailResult {
+  activityId: string;
+  status: 'sent' | 'logged';
+  via: 'account' | 'relay' | 'log';
+  from: string;
+}
+
+export interface ImapAccountRequest {
+  label?: string | null;
+  address: string;
+  /** Defaults to the address. */
+  username?: string | null;
+  password: string;
+  imapHost: string;
+  imapPort: number;
+  imapSecure: boolean;
+  /** Without SMTP settings the mailbox is only synced, not used for sending. */
+  smtpHost?: string | null;
+  smtpPort?: number | null;
+  smtpSecure?: boolean | null;
+  syncEmail?: boolean;
+  unmatched?: UnmatchedMailAction;
+}
+
+export interface MeetingRequest {
+  recordId: string;
+  subject: string;
+  start: string;
+  end: string;
+  location?: string | null;
+  description?: string | null;
+  attendees?: string[];
+  /** Calendar account to add the meeting to (none: only logged in the CRM). */
+  accountId?: string | null;
+  /** Email invitations to the attendees. */
+  sendInvites?: boolean;
+}
+
+export interface MeetingResult {
+  activityId: string;
+  /** The calendar the meeting was added to. */
+  calendar: { accountId: string; provider: IntegrationProvider } | null;
+  /** Set when the meeting was logged but the calendar did not accept it. */
+  calendarError: string | null;
+}
+
+export interface CalendarFeedResult {
+  /** Subscription link; only shown once (a new link replaces the old one). */
+  url: string;
+}
+
+export interface StartCallRequest {
+  recordId: string;
+  /** The number to call (international format, or national with the server's default calling code). */
+  phone: string;
+}
+
+/** A call and the activity it is logged on (outbound calls are logged once the user answers their phone). */
+export interface CallState {
+  call: CallDetails;
+  activityId: string | null;
+}
+
+export interface CallLogRequest {
+  recordId: string;
+  direction: 'inbound' | 'outbound';
+  subject?: string | null;
+  outcome?: (typeof CALL_OUTCOMES)[number] | null;
+  durationSeconds?: number | null;
+  notes?: string | null;
+  phone?: string | null;
+  /** When the call took place (default: now). */
+  at?: string | null;
 }
 
 export interface SearchResultGroup {

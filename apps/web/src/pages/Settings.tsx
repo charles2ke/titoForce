@@ -6,6 +6,7 @@ import { Link } from 'react-router';
 import { ApiError, api } from '../api.ts';
 import { useToast } from '../components/feedback.tsx';
 import { AuthenticatorSetup, CodeField, RecoveryCodes } from '../components/mfa.tsx';
+import { CalendarFeedCard, ConnectedAccountsCard, OAuthReturnNotice, PhoneCard } from '../components/settings/IntegrationSettings.tsx';
 import { Avatar, Badge, Button, Card, cx, ErrorBanner, FormField, KeyValue, Loading, Modal, ObjectTile } from '../components/ui.tsx';
 import { formatDateTime, plural } from '../lib/format.ts';
 import { objectPerm, useAiStatus, useApps, useAuth, useCurrentApp, useObjects, usePermissions } from '../lib/hooks.ts';
@@ -493,6 +494,7 @@ export default function Settings() {
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-6">
       <h1 className="text-xl font-semibold text-slate-900">My settings</h1>
+      <OAuthReturnNotice />
       <Card
         title={
           <span className="flex items-center gap-2">
@@ -524,6 +526,11 @@ export default function Settings() {
           )}
         </p>
       </Card>
+      <ConnectedAccountsCard />
+      <div className="grid gap-5 @3xl:grid-cols-2">
+        <PhoneCard />
+        <CalendarFeedCard />
+      </div>
       <div className="grid gap-5 @3xl:grid-cols-2">
         <div className="space-y-5">
           <PasswordCard />

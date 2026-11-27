@@ -9,6 +9,7 @@ import { FieldValue, UserChip } from '../components/FieldValue.tsx';
 import { ActivityPanel } from '../components/record/RecordActivity.tsx';
 import { ApprovalsCard, SubmitApprovalModal, useApprovalProcesses, useRecordApprovals } from '../components/record/RecordApprovals.tsx';
 import { DetailsPanel, PathBar } from '../components/record/RecordDetails.tsx';
+import { FilesCard } from '../components/record/RecordFiles.tsx';
 import { RelatedLists, useRelated } from '../components/record/RecordRelated.tsx';
 import { ConvertLeadModal } from '../components/record/ConvertLeadModal.tsx';
 import { RecordFormModal } from '../components/RecordForm.tsx';
@@ -218,8 +219,9 @@ function RecordBody({ def, record, refs }: { def: ObjectDef; record: CrmRecord; 
           />
           <div className="mt-4">{tab === 'details' ? <DetailsPanel def={def} record={record} refs={refs} /> : <RelatedLists def={def} record={record} />}</div>
         </div>
-        <aside className="min-w-0 space-y-6" aria-label="Activity and approvals">
+        <aside className="min-w-0 space-y-6" aria-label="Activity, approvals and files">
           <ApprovalsCard def={def} record={record} />
+          <FilesCard def={def} record={record} />
           <ActivityPanel def={def} record={record} />
         </aside>
       </div>
