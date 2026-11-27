@@ -245,7 +245,7 @@ export class CalendarService {
     if (e.cancelled || e.declined) return 'skipped';
     const customers = this.participants(e).filter((a) => !ctx.own.has(a) && !ctx.internal.has(a));
     if (!customers.length) return 'skipped';
-    const match = await readableMatch(this.d.db, ctx.principal, 'email', customers);
+    const match = await readableMatch(this.d.db, this.d.records, ctx.principal, 'email', customers);
     if (!match) return 'skipped';
 
     const startMs = Date.parse(e.allDay ? `${e.start.slice(0, 10)}T00:00:00Z` : e.start);

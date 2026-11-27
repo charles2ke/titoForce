@@ -43,6 +43,10 @@ export interface Config {
   /** Trust X-Forwarded-* headers (client IPs for rate limiting) when running behind a reverse proxy. */
   trustProxy: boolean;
   logLevel: string;
+  /** External base URL used to build single sign-on redirect URLs; the request's origin when unset. */
+  publicUrl: string | null;
+  /** Encrypts MFA secrets and SSO client secrets stored in the database when set. */
+  secretKey: string | null;
   ai: AiConfig;
   integrations: IntegrationsConfig;
 }
@@ -74,6 +78,18 @@ export function resolveAiConfig(env: NodeJS.ProcessEnv): AiConfig {
   if (env.OPENAI_API_KEY) return pick('openai');
   if (env.ANTHROPIC_API_KEY) return pick('anthropic');
   return { provider: 'offline', apiKey: null, baseUrl: '', model: null };
+}
+
+function publicUrl(raw: string | undefined): string | null {
+  if (!raw?.trim()) return null;
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    throw new Error(`TITO_PUBLIC_URL is not a valid URL: ${raw}`);
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('TITO_PUBLIC_URL must be an http(s) URL');
+  return `${url.origin}${url.pathname}`.replace(/\/+$/, '');
 }
 
 const positive = (value: string | undefined, fallback: number): number => {
@@ -122,6 +138,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     secureCookies: env.NODE_ENV === 'production' && env.TITO_INSECURE_COOKIES !== 'true',
     trustProxy: env.TITO_TRUST_PROXY === 'true',
     logLevel: env.TITO_LOG_LEVEL ?? 'info',
+    publicUrl: publicUrl(env.TITO_PUBLIC_URL),
+    secretKey: env.TITO_SECRET_KEY || null,
     ai: resolveAiConfig(env),
     integrations: resolveIntegrationsConfig(env, port),
   };

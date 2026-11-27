@@ -4,7 +4,7 @@ import { buildApp } from '../src/app.ts';
 import { buildIcsFeed, parseIcs } from '../src/integrations/ics.ts';
 import { isPrivateAddress, parseFeedUrl } from '../src/integrations/net.ts';
 import { toE164, twilioSignature } from '../src/integrations/telephony.ts';
-import { normalizePhone } from '../src/platform/contact-points.ts';
+import { normalizePhone, readableMatch } from '../src/platform/contact-points.ts';
 import type { Services } from '../src/services.ts';
 import { createTestServices, principal } from './helpers.ts';
 import { b64, INTEGRATION_ENV, login } from './integration-fakes.ts';
@@ -30,6 +30,33 @@ const upload = (who: string, body: object, path = `contact/${contactId}`) =>
 const download = (who: string, id: string) => app.inject({ url: `/api/attachments/${id}`, headers: { cookie: cookie[who]! } });
 
 describe('file attachments', () => {
+  it('honors sharing and field permissions when accessing files and matching contacts', async () => {
+    const permissions = {
+      setup: false, viewSensitive: false, manageAutomations: false, manageAgents: false,
+      objects: { contact: { read: 'own' as const, create: false, edit: 'own' as const, delete: 'none' as const } },
+    };
+    await s.users.upsertRole({ id: 'file_share_test', name: 'File share test', description: '', permissions });
+    const user = await s.users.createUser({ email: 'file-share@example.com', name: 'File share', roleId: 'file_share_test', password: 'password123' });
+    const rep = await s.users.principalForUser(user.id);
+    expect(await readableMatch(s.db, s.records, rep, 'email', ['ann.files@customer.example'])).toBeNull();
+    const rule = await s.sharing.create({
+      object: 'contact', name: 'File share', description: '', type: 'owner', ownerRoles: ['sales_rep'],
+      criteria: null, shareWith: ['file_share_test'], access: 'read', active: true,
+    });
+    try {
+      expect((await readableMatch(s.db, s.records, rep, 'email', ['ann.files@customer.example']))?.recordId).toBe(contactId);
+      await expect(s.integrations.attachments.upload(rep, 'contact', contactId, { fileName: 'shared.txt', data: b64('shared') })).rejects.toMatchObject({ status: 403 });
+      await s.sharing.update(rule.id, { ...rule, access: 'edit' });
+      const file = await s.integrations.attachments.upload(rep, 'contact', contactId, { fileName: 'shared.txt', data: b64('shared') });
+      await s.integrations.attachments.delete(rep, file.id);
+      await s.users.upsertRole({ id: 'file_share_test', name: 'File share test', description: '', permissions: { ...permissions, fields: { contact: { email: 'none' } } } });
+      const restricted = await s.users.principalForUser(user.id);
+      expect(await readableMatch(s.db, s.records, restricted, 'email', ['ann.files@customer.example'])).toBeNull();
+    } finally {
+      await s.sharing.delete(rule.id);
+    }
+  });
+
   it('stores uploads under a safe name and type and serves them as downloads', async () => {
     const res = await upload('james', { fileName: '../Résumé "final".pdf', contentType: 'application/pdf; charset=binary', data: b64('%PDF-1.4 hello') });
     expect(res.statusCode).toBe(201);

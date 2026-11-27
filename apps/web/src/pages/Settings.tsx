@@ -1,12 +1,14 @@
-import { useMutation } from '@tanstack/react-query';
-import type { AccessLevel } from '@titoforce/shared';
-import { Bot, Check, KeyRound, LayoutGrid, ShieldCheck, UserRound } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AccessLevel, MfaEnrollment, MfaStatus } from '@titoforce/shared';
+import { Bot, Check, KeyRound, LayoutGrid, RefreshCw, ShieldCheck, ShieldOff, Smartphone, TriangleAlert, UserRound } from 'lucide-react';
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { api } from '../api.ts';
+import { ApiError, api } from '../api.ts';
 import { useToast } from '../components/feedback.tsx';
+import { AuthenticatorSetup, CodeField, RecoveryCodes } from '../components/mfa.tsx';
 import { CalendarFeedCard, ConnectedAccountsCard, OAuthReturnNotice, PhoneCard } from '../components/settings/IntegrationSettings.tsx';
-import { Avatar, Badge, Button, Card, cx, ErrorBanner, FormField, KeyValue, Loading, ObjectTile } from '../components/ui.tsx';
+import { Avatar, Badge, Button, Card, cx, ErrorBanner, FormField, KeyValue, Loading, Modal, ObjectTile } from '../components/ui.tsx';
+import { formatDateTime, plural } from '../lib/format.ts';
 import { objectPerm, useAiStatus, useApps, useAuth, useCurrentApp, useObjects, usePermissions } from '../lib/hooks.ts';
 
 const LEVEL: Record<AccessLevel, { label: string; color: string }> = {
@@ -22,6 +24,7 @@ function Level({ level }: { level: AccessLevel }) {
 
 function PasswordCard() {
   const toast = useToast();
+  const status = useQuery({ queryKey: ['mfa'], queryFn: () => api.get<MfaStatus>('/api/auth/mfa') });
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -49,21 +52,286 @@ function PasswordCard() {
         </span>
       }
     >
-      <form onSubmit={submit} className="max-w-sm space-y-3" aria-label="Change password">
-        <ErrorBanner error={change.error} />
-        <FormField label="Current password" htmlFor="pw-current" required>
-          <input id="pw-current" className="input" type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} />
-        </FormField>
-        <FormField label="New password" htmlFor="pw-next" required help="At least 8 characters.">
-          <input id="pw-next" className="input" type="password" autoComplete="new-password" required minLength={8} value={next} onChange={(e) => setNext(e.target.value)} />
-        </FormField>
-        <FormField label="Confirm new password" htmlFor="pw-confirm" required error={mismatch ? 'Passwords do not match' : null}>
-          <input id="pw-confirm" className="input" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-invalid={mismatch || undefined} />
-        </FormField>
-        <Button type="submit" variant="primary" loading={change.isPending} disabled={!current || next.length < 8 || next !== confirm}>
-          Update password
-        </Button>
-      </form>
+      {status.data?.hasPassword === false ? (
+        <p className="text-sm text-slate-600">You sign in with single sign-on, so you have no titoForce password to change.</p>
+      ) : (
+        <form onSubmit={submit} className="max-w-sm space-y-3" aria-label="Change password">
+          <ErrorBanner error={change.error} />
+          <FormField label="Current password" htmlFor="pw-current" required>
+            <input id="pw-current" className="input" type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} />
+          </FormField>
+          <FormField label="New password" htmlFor="pw-next" required help="At least 8 characters.">
+            <input id="pw-next" className="input" type="password" autoComplete="new-password" required minLength={8} value={next} onChange={(e) => setNext(e.target.value)} />
+          </FormField>
+          <FormField label="Confirm new password" htmlFor="pw-confirm" required error={mismatch ? 'Passwords do not match' : null}>
+            <input id="pw-confirm" className="input" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-invalid={mismatch || undefined} />
+          </FormField>
+          <Button type="submit" variant="primary" loading={change.isPending} disabled={!current || next.length < 8 || next !== confirm}>
+            Update password
+          </Button>
+        </form>
+      )}
+    </Card>
+  );
+}
+
+const hasCode = (err: unknown, code: string) => err instanceof ApiError && err.code === code;
+
+interface NewRecoveryCodes {
+  recoveryCodes: string[];
+}
+
+function Warning({ children }: { children: ReactNode }) {
+  return (
+    <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+/** Asks for an authentication code and the current password before changing two-factor authentication. */
+function MfaDialog<T>({
+  title,
+  size = 'sm',
+  intro,
+  codeHelp,
+  submitLabel,
+  danger,
+  request,
+  onSuccess,
+  result,
+  onClose,
+}: {
+  title: string;
+  size?: 'sm' | 'md';
+  intro: ReactNode;
+  codeHelp: string;
+  submitLabel: string;
+  danger?: boolean;
+  request: (body: { code: string; password: string }) => Promise<T>;
+  /** The dialog stays busy until a returned promise settles. */
+  onSuccess: (data: T) => void | Promise<void>;
+  /** Shown instead of the form once the request succeeds. */
+  result?: (data: T) => ReactNode;
+  onClose: () => void;
+}) {
+  const formId = useId();
+  const codeId = useId();
+  const passwordId = useId();
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const codeInput = useRef<HTMLInputElement>(null);
+  const passwordInput = useRef<HTMLInputElement>(null);
+  const resultBox = useRef<HTMLDivElement>(null);
+  const run = useMutation({
+    mutationFn: () => request({ code: code.trim(), password }),
+    onSuccess: (data) => onSuccess(data),
+    onError: (err) => {
+      if (hasCode(err, 'invalid_code')) {
+        setCode('');
+        codeInput.current?.focus();
+      } else if (hasCode(err, 'invalid_password')) {
+        setPassword('');
+        passwordInput.current?.focus();
+      }
+    },
+  });
+  const showResult = run.isSuccess && result !== undefined;
+  const ready = code.trim() !== '' && password !== '';
+
+  useEffect(() => {
+    // The form, and the focus with it, is gone once the result shows.
+    if (showResult) resultBox.current?.focus();
+  }, [showResult]);
+
+  // Closing mid-request could hide new recovery codes, so wait for the answer.
+  const close = () => {
+    if (!run.isPending) onClose();
+  };
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (ready) run.mutate();
+  };
+
+  return (
+    <Modal
+      open
+      onClose={close}
+      title={title}
+      size={size}
+      footer={
+        showResult ? (
+          <Button variant="primary" onClick={close}>
+            Done
+          </Button>
+        ) : (
+          <>
+            <Button onClick={close}>Cancel</Button>
+            <Button type="submit" form={formId} variant={danger ? 'danger' : 'primary'} loading={run.isPending} disabled={!ready}>
+              {submitLabel}
+            </Button>
+          </>
+        )
+      }
+    >
+      {run.isSuccess && result ? (
+        <div ref={resultBox} tabIndex={-1} className="space-y-4 focus:outline-none">
+          {result(run.data)}
+        </div>
+      ) : (
+        <form id={formId} onSubmit={submit} className="space-y-4">
+          {intro}
+          <ErrorBanner error={run.error} />
+          <CodeField id={codeId} value={code} onChange={setCode} inputRef={codeInput} help={codeHelp} />
+          <FormField label="Current password" htmlFor={passwordId}>
+            <input ref={passwordInput} id={passwordId} className="input" type="password" autoComplete="current-password" required maxLength={200} value={password} onChange={(e) => setPassword(e.target.value)} />
+          </FormField>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+function MfaCard() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const requiredNote = useId();
+  const status = useQuery({ queryKey: ['mfa'], queryFn: () => api.get<MfaStatus>('/api/auth/mfa') });
+  const [dialog, setDialog] = useState<'setup' | 'codes' | 'disable' | null>(null);
+  const [enrollment, setEnrollment] = useState<MfaEnrollment | null>(null);
+  const setup = useMutation({
+    mutationFn: () => api.post<MfaEnrollment>('/api/auth/mfa/setup'),
+    onSuccess: (e) => {
+      setEnrollment(e);
+      setDialog('setup');
+    },
+  });
+  const refresh = () => qc.invalidateQueries({ queryKey: ['mfa'] });
+  const close = () => setDialog(null);
+  const s = status.data;
+  const body = useRef<HTMLDivElement>(null);
+  const lastDialog = useRef(dialog);
+
+  useEffect(() => {
+    // Turning two-factor authentication on or off replaces the button that opened the dialog, so keep the focus in the card.
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (lastDialog.current && !dialog && lost) body.current?.querySelector<HTMLElement>('button:enabled')?.focus();
+    lastDialog.current = dialog;
+  }, [dialog]);
+  const anyCodeHelp = 'The 6-digit code from your authenticator app, or a recovery code.';
+  const codesLeft = s ? `${plural(s.recoveryCodesLeft, 'recovery code')} left` : '';
+
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-2">
+          <Smartphone className="size-4 text-slate-400" aria-hidden />
+          Two-factor authentication
+        </span>
+      }
+      actions={s?.hasPassword && <Badge color={s.enabled ? 'green' : 'gray'}>{s.enabled ? 'On' : 'Off'}</Badge>}
+    >
+      <div ref={body}>
+        {status.isLoading ? (
+          <Loading />
+        ) : !s ? (
+          <ErrorBanner error={status.error} />
+        ) : !s.hasPassword ? (
+          <p className="text-sm text-slate-600">You sign in with single sign-on, so your identity provider handles two-factor authentication.</p>
+        ) : s.enabled ? (
+          <div className="space-y-3">
+            {s.enabledAt && <p className="text-sm text-slate-600">Turned on {formatDateTime(s.enabledAt)}</p>}
+            {s.recoveryCodesLeft <= 2 ? (
+              <Warning>{codesLeft}. Generate new ones so you can still sign in if you lose your authenticator app.</Warning>
+            ) : (
+              <p className="text-sm text-slate-600">{codesLeft}</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button icon={RefreshCw} onClick={() => setDialog('codes')}>
+                New recovery codes
+              </Button>
+              <Button icon={ShieldOff} disabled={s.required} aria-describedby={s.required ? requiredNote : undefined} onClick={() => setDialog('disable')}>
+                Turn off
+              </Button>
+            </div>
+            {s.required && (
+              <p id={requiredNote} className="text-xs text-slate-500">
+                Your role requires two-factor authentication.
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">Protect your account with a code from an authenticator app when you sign in with your password.</p>
+            {s.required && <Warning>Your role requires two-factor authentication. Set it up now, or you will be asked to at your next sign-in.</Warning>}
+            <ErrorBanner error={setup.error} />
+            <Button variant="primary" loading={setup.isPending} onClick={() => setup.mutate()}>
+              Set up two-factor authentication
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {dialog === 'setup' && enrollment && (
+        <MfaDialog
+          title="Set up two-factor authentication"
+          size="md"
+          intro={<AuthenticatorSetup enrollment={enrollment} />}
+          codeHelp="The 6-digit code your app shows for titoForce."
+          submitLabel="Turn on"
+          request={(body) => api.post<NewRecoveryCodes>('/api/auth/mfa/enable', body)}
+          onSuccess={() => {
+            toast.success('Two-factor authentication is on');
+            void refresh();
+          }}
+          result={(r) => (
+            <>
+              <p className="text-sm text-slate-600">
+                Two-factor authentication is on. You were signed out on your other devices. If you lose your authenticator app, sign in with one of these recovery codes.
+              </p>
+              <RecoveryCodes codes={r.recoveryCodes} account={user.email} />
+            </>
+          )}
+          onClose={close}
+        />
+      )}
+      {dialog === 'codes' && (
+        <MfaDialog
+          title="New recovery codes"
+          intro={<p className="text-sm text-slate-600">Your current recovery codes will stop working.</p>}
+          codeHelp={anyCodeHelp}
+          submitLabel="Generate codes"
+          request={(body) => api.post<NewRecoveryCodes>('/api/auth/mfa/recovery-codes', body)}
+          onSuccess={() => void refresh()}
+          result={(r) => (
+            <>
+              <p className="text-sm text-slate-600">Here are your new recovery codes. The old ones no longer work.</p>
+              <RecoveryCodes codes={r.recoveryCodes} account={user.email} />
+            </>
+          )}
+          onClose={close}
+        />
+      )}
+      {dialog === 'disable' && (
+        <MfaDialog
+          title="Turn off two-factor authentication"
+          intro={<p className="text-sm text-slate-600">You will sign in with just your password, and your recovery codes will stop working.</p>}
+          codeHelp={anyCodeHelp}
+          submitLabel="Turn off"
+          danger
+          request={(body) => api.post('/api/auth/mfa/disable', body)}
+          onSuccess={async () => {
+            // Close onto the updated card, not the old buttons.
+            await refresh();
+            toast.success('Two-factor authentication is off');
+            close();
+          }}
+          onClose={close}
+        />
+      )}
     </Card>
   );
 }
@@ -153,6 +421,7 @@ function AccessCard() {
     { on: permissions.manageAutomations, label: 'Manage automations, reports & dashboards' },
     { on: permissions.manageAgents, label: 'Manage AI agents' },
     { on: permissions.viewSensitive, label: 'View sensitive fields' },
+    { on: !!permissions.requireMfa, label: 'Two-factor authentication required' },
   ];
   const rows = (objects.data ?? []).map((o) => ({ def: o, perm: objectPerm(permissions, o.apiName) })).filter((r) => r.perm.read !== 'none');
   return (
@@ -263,7 +532,10 @@ export default function Settings() {
         <CalendarFeedCard />
       </div>
       <div className="grid gap-5 @3xl:grid-cols-2">
-        <PasswordCard />
+        <div className="space-y-5">
+          <PasswordCard />
+          <MfaCard />
+        </div>
         <div className="space-y-5">
           <DefaultAppCard />
           <AiCard />

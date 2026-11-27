@@ -31,6 +31,8 @@ type ObjectInput = Omit<ObjectDef, 'fields' | 'createdAt' | 'updatedAt'>;
 export class MetadataService {
   private db: Db;
   private cache = new Map<string, ObjectDef>();
+  /** Checks the definition an object or field change would produce, before it is saved (set in services.ts). */
+  validateChange: ((next: ObjectDef) => Promise<void>) | null = null;
 
   constructor(db: Db) {
     this.db = db;
@@ -253,6 +255,7 @@ export class MetadataService {
     const next: ObjectDef = { ...current, ...patch, apiName, fields: current.fields, isCustom: current.isCustom, keyPrefix: current.keyPrefix };
     if (!next.label?.trim() || !next.pluralLabel?.trim()) throw badRequest('Labels are required');
     this.validateObjectSettings(next);
+    await this.validateChange?.(next);
     return this.saveObject(next);
   }
 
@@ -267,6 +270,7 @@ export class MetadataService {
       await tx.run('DELETE FROM objects WHERE api_name = ?', [apiName]);
       await tx.run('DELETE FROM automations WHERE object_api_name = ?', [apiName]);
       await tx.run('DELETE FROM list_views WHERE object_api_name = ?', [apiName]);
+      await tx.run('DELETE FROM sharing_rules WHERE object_api_name = ?', [apiName]);
     });
     await this.load();
   }
@@ -277,6 +281,7 @@ export class MetadataService {
     if (def.fields.some((f) => f.apiName === field.apiName)) throw conflict(`Field ${field.apiName} already exists on ${def.label}`);
     const next = { ...def, fields: [...def.fields, field] };
     this.validateField(next, field);
+    await this.validateChange?.(next);
     return this.saveObject(next);
   }
 
@@ -288,6 +293,7 @@ export class MetadataService {
     const field: FieldDef = { ...current, ...patch, apiName: current.apiName, type: current.type, isCustom: current.isCustom };
     const next = { ...def, fields: def.fields.map((f) => (f.apiName === fieldApi ? field : f)) };
     this.validateField(next, field);
+    await this.validateChange?.(next);
     return this.saveObject(next);
   }
 

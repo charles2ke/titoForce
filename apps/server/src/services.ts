@@ -11,10 +11,16 @@ import type { ImapFactory, TransportFactory } from './integrations/types.ts';
 import { FormsService } from './modules/forms.ts';
 import { HrService } from './modules/hr.ts';
 import { SalesService } from './modules/sales.ts';
+import { ChallengeStore } from './platform/challenges.ts';
 import { EventBus, JobQueue } from './platform/events.ts';
+import { assertObjectChangeAllowed } from './platform/field-security.ts';
 import { MetadataService } from './platform/metadata.ts';
+import { MfaService } from './platform/mfa.ts';
 import { NotificationService } from './platform/notifications.ts';
 import { RecordService } from './platform/records.ts';
+import { SecretBox } from './platform/secret-box.ts';
+import { SharingService } from './platform/sharing.ts';
+import { SsoService } from './platform/sso.ts';
 import { UserService } from './platform/users.ts';
 import { AppService, ListViewService } from './platform/views.ts';
 
@@ -25,6 +31,11 @@ export interface Services {
   jobs: JobQueue;
   metadata: MetadataService;
   users: UserService;
+  secrets: SecretBox;
+  challenges: ChallengeStore;
+  mfa: MfaService;
+  sharing: SharingService;
+  sso: SsoService;
   notifications: NotificationService;
   records: RecordService;
   executor: ActionExecutor;
@@ -42,7 +53,7 @@ export interface Services {
 }
 
 export interface ServiceOptions {
-  /** Used for LLM, webhook and integration API calls (tests inject fakes). */
+  /** Used for LLM, webhook, single sign-on and integration API calls (tests inject fakes). */
   fetchImpl?: typeof fetch;
   jobConcurrency?: number;
   /** SMTP and IMAP clients (tests inject fakes). */
@@ -57,9 +68,21 @@ export async function createServices(config: Config, opts: ServiceOptions = {}):
   const jobs = new JobQueue(opts.jobConcurrency ?? 2);
   const metadata = new MetadataService(db);
   await metadata.load();
-  const users = new UserService(db);
+  const secrets = new SecretBox(config.secretKey);
+  const challenges = new ChallengeStore(db);
+  const mfa = new MfaService(db, secrets);
+  const users = new UserService(db, mfa, challenges);
+  await users.refreshFieldRestrictions();
+  metadata.validateChange = async (next) => assertObjectChangeAllowed(await users.listRoles(), metadata.list(), next);
+  const sharing = new SharingService(db, metadata, users);
+  const sso = new SsoService(db, users, secrets, challenges);
+  if (opts.fetchImpl) sso.oidc.fetchImpl = opts.fetchImpl;
   const notifications = new NotificationService(db);
-  const records = new RecordService(db, metadata, users, events);
+  const records = new RecordService(db, metadata, users, sharing, events);
+  // Fields hidden from some role are kept out of the search index; re-index when that set changes.
+  users.onSearchFieldsChanged = async (objects) => {
+    for (const object of objects) if (metadata.get(object)) await records.reindexSearch(object);
+  };
   const executor = new ActionExecutor(records, metadata, users, notifications, jobs);
   if (opts.fetchImpl) executor.fetchImpl = opts.fetchImpl;
   const automations = new AutomationService(db, metadata, executor, events);
@@ -88,6 +111,11 @@ export async function createServices(config: Config, opts: ServiceOptions = {}):
     jobs,
     metadata,
     users,
+    secrets,
+    challenges,
+    mfa,
+    sharing,
+    sso,
     notifications,
     records,
     executor,

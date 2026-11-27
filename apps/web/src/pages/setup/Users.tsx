@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RoleDef, UserDTO } from '@titoforce/shared';
-import { Bot, Pencil, Search, UserPlus, Users as UsersIcon } from 'lucide-react';
-import { useId, useState } from 'react';
+import { Bot, Pencil, RotateCcw, Search, ShieldCheck, ShieldOff, UserPlus, Users as UsersIcon } from 'lucide-react';
+import { useId, useRef, useState } from 'react';
 import { api } from '../../api.ts';
-import { useToast } from '../../components/feedback.tsx';
+import { useConfirm, useToast } from '../../components/feedback.tsx';
 import { Avatar, Badge, Button, EmptyState, ErrorBanner, FormField, IconButton, Loading, Modal, PageHeader, Toggle } from '../../components/ui.tsx';
 import { formatDate, formatDateTime } from '../../lib/format.ts';
 import { useAuth, useUsers } from '../../lib/hooks.ts';
@@ -31,6 +31,7 @@ function RoleSelect({ id, value, onChange, roles, disabled }: { id: string; valu
 function UserForm({ user, roles, onClose }: { user: UserDTO | null; roles: RoleDef[]; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
+  const confirm = useConfirm();
   const { user: me } = useAuth();
   const isNew = !user;
   const isSelf = user?.id === me.id;
@@ -43,6 +44,8 @@ function UserForm({ user, roles, onClose }: { user: UserDTO | null; roles: RoleD
   const [roleId, setRoleId] = useState(user?.roleId ?? defaultRole);
   const [active, setActive] = useState(user?.active ?? true);
   const [password, setPassword] = useState('');
+  const [mfa, setMfa] = useState<'on' | 'off' | 'reset'>(user?.mfaEnabled ? 'on' : 'off');
+  const mfaBox = useRef<HTMLDivElement>(null);
 
   const emailError = isNew && email.trim() && !EMAIL_RE.test(email.trim()) ? 'Enter a valid email address.' : null;
   const passwordError = password && password.length < 8 ? 'At least 8 characters.' : null;
@@ -68,6 +71,19 @@ function UserForm({ user, roles, onClose }: { user: UserDTO | null; roles: RoleD
       onClose();
       await qc.invalidateQueries({ queryKey: ['users'] });
       if (isSelf) await qc.invalidateQueries({ queryKey: ['session'] });
+    },
+  });
+
+  const resetMfa = useMutation({
+    mutationFn: () => api.del<{ ok: true }>(`/api/users/${user!.id}/mfa`),
+    onSuccess: () => {
+      setMfa('reset');
+      toast.success('Two-factor authentication reset');
+    },
+    onSettled: () => {
+      // Focus can't go back to the reset button (busy, then gone); keep it inside the dialog.
+      mfaBox.current?.focus();
+      return qc.invalidateQueries({ queryKey: ['users'] });
     },
   });
 
@@ -136,6 +152,46 @@ function UserForm({ user, roles, onClose }: { user: UserDTO | null; roles: RoleD
           <div>
             <Toggle checked={active} onChange={setActive} label="Active" disabled={isSelf} />
             <p className="mt-1 text-xs text-slate-400">{isSelf ? 'You can’t deactivate yourself.' : 'Inactive users can’t sign in. Their records are kept.'}</p>
+          </div>
+        )}
+        {user && mfa !== 'off' && (
+          <div ref={mfaBox} tabIndex={-1} className="rounded-lg border border-slate-200 p-3 outline-none">
+            {mfa === 'on' ? (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-slate-800">
+                      <ShieldCheck className="size-4 shrink-0 text-emerald-600" aria-hidden />
+                      Two-factor authentication is on
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">Reset it if they lost their authenticator app.</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    icon={RotateCcw}
+                    aria-label="Reset two-factor authentication"
+                    loading={resetMfa.isPending}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Reset two-factor authentication for ${user.name}?`,
+                        message: `${user.name} will need to set up two-factor authentication again (if their role requires it) at their next sign-in. Use this when they lost their authenticator.`,
+                        confirmLabel: 'Reset',
+                        danger: true,
+                      });
+                      if (ok) resetMfa.mutate();
+                    }}
+                  >
+                    Reset
+                  </Button>
+                </div>
+                <ErrorBanner error={resetMfa.error} className="mt-2" />
+              </>
+            ) : (
+              <p className="flex items-start gap-1.5 text-sm text-slate-600">
+                <ShieldOff className="mt-0.5 size-4 shrink-0 text-slate-400" aria-hidden />
+                Two-factor authentication was reset. If their role requires it, they’ll set it up again at their next sign-in.
+              </p>
+            )}
           </div>
         )}
       </form>
@@ -221,7 +277,19 @@ export default function Users() {
                     <td className="px-4 py-2.5 text-slate-600">{u.email}</td>
                     <td className="px-4 py-2.5 text-slate-600">{u.title ?? ''}</td>
                     <td className="px-4 py-2.5 text-slate-700">{u.roleName}</td>
-                    <td className="px-4 py-2.5">{u.active ? <Badge color="green">Active</Badge> : <Badge color="gray">Inactive</Badge>}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {u.active ? <Badge color="green">Active</Badge> : <Badge color="gray">Inactive</Badge>}
+                        {u.mfaEnabled && (
+                          <span title="Two-factor authentication is on">
+                            <Badge color="teal">
+                              <ShieldCheck className="size-3" aria-hidden />
+                              2FA
+                            </Badge>
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-500" title={formatDateTime(u.createdAt)}>
                       {formatDate(u.createdAt)}
                     </td>

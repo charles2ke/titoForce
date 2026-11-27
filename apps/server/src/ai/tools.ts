@@ -5,7 +5,7 @@ import type { ApprovalService } from '../automation/approvals.ts';
 import type { SalesService } from '../modules/sales.ts';
 import type { MetadataService } from '../platform/metadata.ts';
 import type { NotificationService } from '../platform/notifications.ts';
-import { canViewSensitive, objectPermission, type Principal } from '../platform/principal.ts';
+import { fieldAccessOf, objectPermission, type Principal } from '../platform/principal.ts';
 import type { RecordService } from '../platform/records.ts';
 import type { UserService } from '../platform/users.ts';
 import { addDays, badRequest, isoDate } from '../util.ts';
@@ -221,13 +221,14 @@ export const TOOLS: ToolDef[] = [
         label: dataOnlyText(def.label),
         statusField: def.statusField ?? null,
         fields: def.fields
-          .filter((f) => !f.sensitive || canViewSensitive(principal))
-          .map((f) => ({
+          .map((f) => ({ f, access: fieldAccessOf(principal, def.apiName, f) }))
+          .filter(({ access }) => access !== 'none')
+          .map(({ f, access }) => ({
             name: f.apiName,
             label: dataOnlyText(f.label),
             type: f.type,
             required: !!f.required,
-            readOnly: f.type === 'formula' || f.type === 'rollup',
+            readOnly: f.type === 'formula' || f.type === 'rollup' || access === 'read',
             values: f.options?.map((o) => ({ reference: optionReference(o.value), label: dataOnlyText(o.value) })),
             references: f.referenceTo ?? undefined,
           })),

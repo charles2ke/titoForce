@@ -35,6 +35,8 @@ const SetupObjects = lazy(() => import('./pages/setup/Objects.tsx'));
 const SetupObjectDetail = lazy(() => import('./pages/setup/ObjectDetail.tsx'));
 const SetupUsers = lazy(() => import('./pages/setup/Users.tsx'));
 const SetupRoles = lazy(() => import('./pages/setup/Roles.tsx'));
+const SetupSharing = lazy(() => import('./pages/setup/Sharing.tsx'));
+const SetupSso = lazy(() => import('./pages/setup/Sso.tsx'));
 const SetupApps = lazy(() => import('./pages/setup/Apps.tsx'));
 const SetupAutomations = lazy(() => import('./pages/setup/Automations.tsx'));
 const SetupApprovalProcesses = lazy(() => import('./pages/setup/ApprovalProcesses.tsx'));
@@ -78,6 +80,8 @@ export const router = createBrowserRouter([
               { path: 'objects/:api', element: page(SetupObjectDetail) },
               { path: 'users', element: page(SetupUsers) },
               { path: 'roles', element: page(SetupRoles) },
+              { path: 'sharing', element: page(SetupSharing) },
+              { path: 'sso', element: page(SetupSso) },
               { path: 'apps', element: page(SetupApps) },
               { path: 'automations', element: page(SetupAutomations) },
               { path: 'approval-processes', element: page(SetupApprovalProcesses) },

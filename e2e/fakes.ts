@@ -9,7 +9,7 @@ export const SMTP_PORT = Number(process.env.E2E_SMTP_PORT ?? Number(process.env.
 export const EMAIL_FROM = 'crm@titoforce.example';
 
 /** Made-up credentials: the test server never calls Twilio, and the tests sign its webhooks with the auth token. */
-export const TWILIO = { accountSid: 'AC00000000000000000000000000000e2e', authToken: 'e2e-twilio-auth-token', number: '+14155550199' };
+export const TWILIO = { accountSid: 'e2e-fake-account', authToken: 'e2e-twilio-auth-token', number: '+14155550199' };
 export const GOOGLE_CLIENT_ID = 'e2e-client.apps.googleusercontent.com';
 export const MICROSOFT_CLIENT_ID = '00000000-0000-0000-0000-00000000e2e0';
 

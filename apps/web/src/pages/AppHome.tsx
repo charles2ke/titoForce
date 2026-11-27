@@ -7,7 +7,7 @@ import { DashboardGrid, useDashboard } from '../components/DashboardGrid.tsx';
 import { useToast } from '../components/feedback.tsx';
 import { Badge, Button, Card, cx, EmptyState, ErrorBanner, Loading, ObjectTile } from '../components/ui.tsx';
 import { formatDate, plural, relativeTime, todayIso } from '../lib/format.ts';
-import { invalidateRecordData, useAiPanel, useApps, useAuth, useObjects, usePermissions } from '../lib/hooks.ts';
+import { invalidateRecordData, useAiPanel, useApps, useAuth, useObjectDef, useObjects, usePermissions } from '../lib/hooks.ts';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -25,7 +25,10 @@ function CardTitle({ icon: IconCmp, children }: { icon: typeof Inbox; children: 
 
 function MyTasks() {
   const { user } = useAuth();
-  const { canEdit } = usePermissions();
+  const { canEdit, canEditField } = usePermissions();
+  const { def: activity } = useObjectDef('activity');
+  const status = activity?.fields.find((f) => f.apiName === 'status');
+  const canComplete = !!activity && !!status && canEditField(activity, status);
   const qc = useQueryClient();
   const toast = useToast();
   const q = useQuery({
@@ -81,7 +84,7 @@ function MyTasks() {
               <li key={r.id} className="flex items-start gap-2.5 px-4 py-2.5">
                 <button
                   type="button"
-                  disabled={!canEdit('activity', r.ownerId) || complete.isPending}
+                  disabled={!canComplete || !canEdit(r) || complete.isPending}
                   onClick={() => complete.mutate(r.id)}
                   aria-label={`Mark “${r.name}” complete`}
                   title="Mark complete"

@@ -5,8 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router';
 import { ApiError, api, errorField } from '../api.ts';
-import { isEditable } from '../lib/format.ts';
-import { invalidateRecordData, useAuth, useObjectDef } from '../lib/hooks.ts';
+import { invalidateRecordData, useAuth, useObjectDef, usePermissions } from '../lib/hooks.ts';
 import { useToast } from './feedback.tsx';
 import { FieldInput, UserSelect } from './FieldInput.tsx';
 import { Button, ErrorBanner, FormField } from './ui.tsx';
@@ -45,9 +44,12 @@ function sections(def: ObjectDef, fields: FieldDef[]): [string, FieldDef[]][] {
 
 function RecordForm({ def, record, refs, initial, initialLabels, onClose, onSaved }: RecordFormProps & { def: ObjectDef }) {
   const { user } = useAuth();
+  const perms = usePermissions();
   const qc = useQueryClient();
   const toast = useToast();
-  const editable = useMemo(() => def.fields.filter((f) => isEditable(def, f)), [def]);
+  // Read-only fields (calculated, or read only for the user's role) stay out of the form.
+  const editable = def.fields.filter((f) => perms.canEditField(def, f));
+  const showOwner = !record || perms.canChangeOwner(record);
   const [values, setValues] = useState<Record<string, unknown>>(() => {
     if (record) return { ...Object.fromEntries(editable.map((f) => [f.apiName, record.fields[f.apiName] ?? null])), owner_id: record.ownerId };
     const v: Record<string, unknown> = { owner_id: user.id };
@@ -154,7 +156,7 @@ function RecordForm({ def, record, refs, initial, initialLabels, onClose, onSave
                       <FieldInput id={`f-${f.apiName}`} field={f} value={values[f.apiName]} invalid={!!fieldErrors[f.apiName]} refLabel={labels[String(values[f.apiName] ?? '')]} onChange={(v) => set(f.apiName, v)} />
                     </FormField>
                   ))}
-                  {idx === 0 && (
+                  {idx === 0 && showOwner && (
                     <FormField htmlFor="f-owner_id" label="Owner" error={fieldErrors.owner_id}>
                       <UserSelect id="f-owner_id" value={(values.owner_id as string | null) ?? null} allowEmpty={false} onChange={(v) => set('owner_id', v)} />
                     </FormField>

@@ -1,7 +1,20 @@
 import { type QueryClient, useQuery } from '@tanstack/react-query';
-import type { AgentDef, AiStatus, AppDef, ObjectDef, ObjectPermission, RolePermissions, SessionInfo, UserDTO } from '@titoforce/shared';
+import {
+  type AgentDef,
+  type AiStatus,
+  type AppDef,
+  type CrmRecord,
+  type FieldDef,
+  fieldAccess,
+  type ObjectDef,
+  type ObjectPermission,
+  type RolePermissions,
+  type SessionInfo,
+  type UserDTO,
+} from '@titoforce/shared';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { ApiError, api } from '../api.ts';
+import { isEditable } from './format.ts';
 
 export function useSession() {
   return useQuery({
@@ -37,14 +50,23 @@ const allows = (level: string, ownerId: string | null, userId: string) => level 
 
 export function usePermissions() {
   const { user, permissions } = useAuth();
+  // Records from the API say what the user may do with them, including access granted by sharing rules.
+  const canEdit = (record: CrmRecord) => record.access?.edit ?? allows(objectPerm(permissions, record.object).edit, record.ownerId, user.id);
   return {
     permissions,
     isAdmin: permissions.setup,
     canManageAutomations: permissions.setup || permissions.manageAutomations,
     canManageAgents: permissions.setup || permissions.manageAgents,
     canCreate: (object: string) => objectPerm(permissions, object).create,
-    canEdit: (object: string, ownerId: string | null) => allows(objectPerm(permissions, object).edit, ownerId, user.id),
-    canDelete: (object: string, ownerId: string | null) => allows(objectPerm(permissions, object).delete, ownerId, user.id),
+    canEdit,
+    canDelete: (record: CrmRecord) => record.access?.delete ?? allows(objectPerm(permissions, record.object).delete, record.ownerId, user.id),
+    /** Edit access from sharing rules does not include giving the record to someone else (same rule as the server). */
+    canChangeOwner: (record: CrmRecord) => {
+      const perm = objectPerm(permissions, record.object);
+      return canEdit(record) && ((perm.read === 'all' && perm.edit === 'all') || record.ownerId === user.id);
+    },
+    /** Fields the user can type into: not calculated, and editable under the role's field permissions. */
+    canEditField: (def: ObjectDef, field: FieldDef) => isEditable(def, field) && fieldAccess(permissions, def.apiName, field) === 'edit',
   };
 }
 

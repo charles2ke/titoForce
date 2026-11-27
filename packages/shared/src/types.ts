@@ -55,7 +55,7 @@ export interface FieldDef {
   rollup?: RollupDef;
   defaultValue?: unknown;
   helpText?: string;
-  /** Restricted to roles with the viewSensitive permission (field-level security). */
+  /** Hidden from roles without the viewSensitive permission, unless a role's field permissions say otherwise. */
   sensitive?: boolean;
   precision?: number;
   section?: string;
@@ -116,6 +116,13 @@ export interface CrmRecord {
   createdBy: string | null;
   updatedBy: string | null;
   fields: RecordData;
+  /** What the signed-in user may do with this record, including access granted by sharing rules. */
+  access?: RecordAccess;
+}
+
+export interface RecordAccess {
+  edit: boolean;
+  delete: boolean;
 }
 
 /** Display names for referenced records and users, keyed by id. */
@@ -205,13 +212,23 @@ export interface ObjectPermission {
   delete: AccessLevel;
 }
 
+/** Field-level security: `edit` (read and write), `read` (read only) or `none` (hidden). */
+export type FieldAccess = 'edit' | 'read' | 'none';
+
 export interface RolePermissions {
   setup: boolean;
   viewSensitive: boolean;
   manageAutomations: boolean;
   manageAgents: boolean;
+  /** Users with this role must use a second factor when they sign in with a password. */
+  requireMfa?: boolean;
   /** Keyed by object api name; '*' is the default for unlisted objects. */
   objects: Record<string, ObjectPermission>;
+  /**
+   * Field permissions keyed by object, then field api name. Unlisted fields are editable, except sensitive fields,
+   * which are hidden from roles without viewSensitive. Ignored for roles with setup access.
+   */
+  fields?: Record<string, Record<string, FieldAccess>>;
 }
 
 export interface RoleDef {
@@ -234,12 +251,133 @@ export interface UserDTO {
   /** Phone used to bridge click-to-call and forward inbound calls. */
   phone?: string | null;
   createdAt: string;
+  /** Only included for administrators. */
+  mfaEnabled?: boolean;
 }
 
 export interface SessionInfo {
   user: UserDTO;
   permissions: RolePermissions;
 }
+
+/** Response of POST /api/auth/login: a session, or a second step. */
+export type LoginResponse =
+  | (SessionInfo & { token?: string })
+  | { mfaRequired: true; challenge: string }
+  | { mfaSetupRequired: true; challenge: string };
+
+export interface MfaStatus {
+  enabled: boolean;
+  /** The user's role requires a second factor. */
+  required: boolean;
+  recoveryCodesLeft: number;
+  enabledAt: string | null;
+  /** Users without a password sign in with single sign-on, where the identity provider handles MFA. */
+  hasPassword: boolean;
+}
+
+/** A new authenticator secret, shown once while the user sets up MFA. */
+export interface MfaEnrollment {
+  secret: string;
+  /** otpauth:// URI for QR codes. */
+  uri: string;
+}
+
+// ---------- Sharing rules ----------
+
+export type SharingRuleType = 'owner' | 'criteria';
+
+/** Opens records to roles whose object access is limited to their own records. */
+export interface SharingRule {
+  id: string;
+  object: string;
+  name: string;
+  description: string;
+  type: SharingRuleType;
+  /** Owner rules: records owned by users with these roles. */
+  ownerRoles: string[];
+  /** Criteria rules: records matching these conditions. */
+  criteria: FilterGroup | null;
+  /** Roles that get access. */
+  shareWith: string[];
+  /** Edit access also needs the role's own edit permission on the object. Sharing never grants delete. */
+  access: 'read' | 'edit';
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------- Single sign-on ----------
+
+export type SsoProviderType = 'oidc' | 'saml';
+
+export interface OidcSettings {
+  issuer: string;
+  clientId: string;
+  /** Space-separated; must include openid. */
+  scopes: string;
+  tokenAuthMethod: 'client_secret_basic' | 'client_secret_post';
+}
+
+export interface SamlSettings {
+  /** Identity provider single sign-on URL (HTTP-Redirect binding). */
+  entryPoint: string;
+  /** Expected issuer of responses; not checked when empty. */
+  idpIssuer: string | null;
+  /** Identity provider signing certificate(s), PEM or base64. */
+  idpCert: string;
+  /** Service provider entity ID; defaults to the metadata URL. */
+  spEntityId: string | null;
+  /** Attribute holding the email address when the NameID is not one. */
+  emailAttribute: string | null;
+  nameAttribute: string | null;
+}
+
+export interface SsoProvider {
+  id: string;
+  type: SsoProviderType;
+  name: string;
+  enabled: boolean;
+  config: OidcSettings | SamlSettings;
+  /** Whether an OIDC client secret is stored. It is never returned. */
+  hasSecret: boolean;
+  /** Create a user on first sign-in when no account matches. */
+  jit: boolean;
+  /** Role for users created on first sign-in. */
+  defaultRole: string | null;
+  /** Only accept these email domains; empty accepts any. */
+  allowedDomains: string[];
+  /** Values to register with the identity provider. */
+  urls: { redirect?: string; acs?: string; entityId?: string; metadata?: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SsoProviderList {
+  providers: SsoProvider[];
+  /** Public address of titoForce that provider URLs start with. */
+  baseUrl: string;
+}
+
+/** Enabled providers, as listed on the sign-in page. */
+export interface PublicSsoProvider {
+  id: string;
+  name: string;
+  type: SsoProviderType;
+}
+
+/** Why a single sign-on attempt failed; sent back to the sign-in page as `?sso_error=`. */
+export type SsoErrorReason =
+  | 'expired'
+  | 'denied'
+  | 'failed'
+  | 'disabled'
+  | 'no_email'
+  | 'unverified_email'
+  | 'domain_not_allowed'
+  | 'not_provisioned'
+  | 'inactive'
+  | 'rate_limited';
 
 // ---------- Apps ----------
 

@@ -191,6 +191,16 @@ describe('LLM provider (mocked OpenAI-compatible API)', () => {
   });
 
   it('round-trips distinct picklist options through describe and update tools', async () => {
+    const agent = await s.agents.create(await principal(s, 'admin'), {
+      name: 'Picklist approval test',
+      description: '',
+      instructions: '',
+      tools: ['describe_object', 'query_records', 'update_record'],
+      autonomy: 'approval_required',
+      icon: 'bot',
+      color: 'indigo',
+      active: true,
+    });
     const original = s.metadata.require('lead');
     const field = original.fields.find((f) => f.apiName === 'lead_source')!;
     const previousOptions = field.options!;
@@ -213,7 +223,8 @@ describe('LLM provider (mocked OpenAI-compatible API)', () => {
         { content: 'Updated.' },
       ];
 
-      expect((await chat(maria, 'agt_copilot', 'Set this lead source to North America')).status).toBe('completed');
+      const run = await chat(maria, agent.id, 'Set this lead source to North America');
+      expect(run.status).toBe('completed');
       const described = JSON.parse(requests[1]!.body.messages.at(-1)!.content!);
       const values = described.fields.find((f: { name: string }) => f.name === 'lead_source').values;
       expect(values).toEqual([
@@ -222,6 +233,10 @@ describe('LLM provider (mocked OpenAI-compatible API)', () => {
       ]);
       const queried = JSON.parse(requests[2]!.body.messages.at(-1)!.content!);
       expect(queried.records.map((record: { id: string }) => record.id)).toContain(lead.id);
+      expect((await s.records.get(maria, 'lead', lead.id)).fields.lead_source).toBe(choices[0]);
+      const action = run.steps.find((step) => step.tool === 'update_record')!;
+      expect(action.status).toBe('pending_approval');
+      expect((await s.agents.decideAction(maria, action.actionId!, 'approve')).status).toBe('executed');
       expect((await s.records.get(maria, 'lead', lead.id)).fields.lead_source).toBe(choices[1]);
     } finally {
       await s.metadata.saveObject(original);

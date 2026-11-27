@@ -13,6 +13,7 @@
   "dependencies": {
     "@fastify/cookie": "^11.1.5",
     "@fastify/static": "^10.1.12",
+    "@node-saml/node-saml": "^5.2.0",
     "@titoforce/shared": "*",
     "fastify": "^5.12.8",
     "ical.js": "^2.2.1",
@@ -23,6 +24,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/pg": "^8.23.1"
+    "@types/pg": "^8.23.1",
+    "xml-crypto": "^6.4.0"
   }
 }

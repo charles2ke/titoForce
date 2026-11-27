@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { TABLES } from '../src/db/schema.ts';
+import { SqliteDb } from '../src/db/database.ts';
+import { migrate, TABLES } from '../src/db/schema.ts';
 import { prepareCsvImport } from '../src/platform/csv-import.ts';
 import type { Principal } from '../src/platform/principal.ts';
 import { seedIfNeeded } from '../src/seed/index.ts';
@@ -32,6 +33,30 @@ async function rejects(promise: Promise<unknown>, status: number, code?: string)
 }
 
 describe('database', () => {
+  it.each(['integrations', 'security'])('upgrades a version 3 database from %s', async (branch) => {
+    const db = new SqliteDb(':memory:');
+    try {
+      await migrate(db);
+      if (branch === 'security') {
+        for (const table of ['attachment_contents', 'attachments', 'contact_points', 'connected_accounts', 'oauth_states', 'email_messages', 'calls', 'calendar_events', 'calendar_feeds']) {
+          await db.exec(`DROP TABLE ${table}`);
+        }
+        await db.exec('ALTER TABLE users DROP COLUMN phone');
+      } else {
+        for (const table of ['user_identities', 'sso_providers', 'auth_challenges', 'user_mfa', 'sharing_rules']) await db.exec(`DROP TABLE ${table}`);
+      }
+      await db.run('DELETE FROM schema_migrations WHERE version = ?', [4]);
+      await migrate(db);
+      await migrate(db);
+      const tables = await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
+      expect(tables.map((row) => row.name).sort()).toEqual([...TABLES].sort());
+      const columns = await db.all<{ name: string }>('PRAGMA table_info(users)');
+      expect(columns.some((column) => column.name === 'phone')).toBe(true);
+    } finally {
+      await db.close();
+    }
+  });
+
   it('TABLES lists exactly the tables the migrations create', async () => {
     const sql =
       s.db.dialect === 'postgres'
@@ -100,6 +125,80 @@ describe('records', () => {
     // Saving other fields must not wipe the value the editor cannot see.
     await s.records.update(coordinator, 'employee', emp.id, { location: 'Remote' });
     expect((await s.records.get(hannah, 'employee', emp.id)).fields).toMatchObject({ location: 'Remote', salary });
+  });
+
+  it('hides fields and makes them read-only per role, and keeps hidden values out of search', async () => {
+    const rep = (await s.users.getRole('sales_rep'))!;
+    await s.users.upsertRole({ ...rep, permissions: { ...rep.permissions, fields: { account: { description: 'none', industry: 'read' } } } });
+    try {
+      const jamesNow = await principal(s, 'james');
+      const acct = await s.records.create(maria, 'account', { name: 'Field Security Co', industry: 'Energy', description: 'zebra-crossing-secret', owner_id: james.userId });
+      const seen = await s.records.get(jamesNow, 'account', acct.id);
+      expect(seen.fields).not.toHaveProperty('description');
+      expect(seen.fields.industry).toBe('Energy');
+      await rejects(s.records.update(jamesNow, 'account', acct.id, { industry: 'Retail' }), 403);
+      await rejects(s.records.update(jamesNow, 'account', acct.id, { description: 'guess' }), 403);
+      // Forms send read-only values back unchanged; that is allowed.
+      expect((await s.records.update(jamesNow, 'account', acct.id, { industry: 'Energy', phone: '555-0100' })).fields.phone).toBe('555-0100');
+      await rejects(s.records.query(jamesNow, 'account', { filters: { match: 'all', rules: [{ field: 'description', op: 'contains', value: 'zebra' }] } }), 403);
+      // Other roles still see the field, but it is not searchable while any role cannot see it.
+      expect((await s.records.get(maria, 'account', acct.id)).fields.description).toBe('zebra-crossing-secret');
+      const found = async () => (await s.records.search(maria, 'zebra-crossing-secret')).flatMap((g) => g.records.map((r) => r.id));
+      expect(await found()).not.toContain(acct.id);
+      await s.users.upsertRole(rep);
+      expect(await found()).toContain(acct.id);
+    } finally {
+      await s.users.upsertRole(rep);
+    }
+  });
+
+  it('opens records to roles with own-record access through sharing rules, never granting delete', async () => {
+    await s.users.upsertRole({
+      id: 'territory_rep',
+      name: 'Territory Rep',
+      description: 'Sees only their own accounts.',
+      permissions: { setup: false, viewSensitive: false, manageAutomations: false, manageAgents: false, objects: { account: { read: 'own', create: true, edit: 'own', delete: 'own' } } },
+    });
+    const rep = await s.users.principalForUser((await s.users.createUser({ email: 'territory@example.com', name: 'Territory Rep', roleId: 'territory_rep', password: 'password123' })).id);
+    const managers = await s.records.create(maria, 'account', { name: 'Managed by Maria' });
+    const energy = await s.records.create(maria, 'account', { name: 'Energy Shared Co', industry: 'Energy', owner_id: james.userId });
+    const ids = async () => (await s.records.query(rep, 'account', { pageSize: 200 })).records.map((r) => r.id);
+    await rejects(s.records.get(rep, 'account', managers.id), 404);
+    expect(await ids()).not.toContain(managers.id);
+
+    const byOwner = await s.sharing.create({ object: 'account', name: 'Manager accounts', description: '', type: 'owner', ownerRoles: ['sales_manager'], criteria: null, shareWith: ['territory_rep'], access: 'read', active: true });
+    expect((await s.records.get(rep, 'account', managers.id)).access).toEqual({ edit: false, delete: false });
+    expect(await ids()).toContain(managers.id);
+    await rejects(s.records.update(rep, 'account', managers.id, { phone: '1' }), 403);
+
+    const byCriteria = await s.sharing.create({
+      object: 'account',
+      name: 'Energy accounts',
+      description: '',
+      type: 'criteria',
+      ownerRoles: [],
+      criteria: { match: 'all', rules: [{ field: 'industry', op: 'eq', value: 'Energy' }] },
+      shareWith: ['territory_rep'],
+      access: 'edit',
+      active: true,
+    });
+    expect((await s.records.get(rep, 'account', energy.id)).access).toEqual({ edit: true, delete: false });
+    await s.records.update(rep, 'account', energy.id, { phone: '555-0101' });
+    await rejects(s.records.delete(rep, 'account', energy.id), 403);
+    // Taking ownership would turn shared edit access into delete access.
+    await rejects(s.records.update(rep, 'account', energy.id, { owner_id: rep.userId }), 403);
+    const mine = await s.records.create(rep, 'account', { name: 'Territory Own Co' });
+    expect((await s.records.update(rep, 'account', mine.id, { owner_id: james.userId })).ownerId).toBe(james.userId);
+
+    // Rules in use block deleting the roles and fields they refer to; inactive rules share nothing.
+    await s.users.upsertRole({ id: 'unused_role', name: 'Unused', description: '', permissions: { ...rep.permissions!, objects: {} } });
+    await s.sharing.update(byCriteria.id, { ...byCriteria, shareWith: ['territory_rep', 'unused_role'] });
+    expect((await rejects(s.users.deleteRole('unused_role'), 409)).message).toContain('Energy accounts');
+    await rejects(s.sharing.assertFieldUnused('account', 'industry'), 409);
+    await s.sharing.update(byOwner.id, { ...byOwner, active: false });
+    await rejects(s.records.get(rep, 'account', managers.id), 404);
+    await s.sharing.delete(byOwner.id);
+    await s.sharing.delete(byCriteria.id);
   });
 
   it('blocks likely duplicates unless explicitly allowed', async () => {

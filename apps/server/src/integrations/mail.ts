@@ -459,7 +459,7 @@ export class MailService {
   }
 
   private async contactTarget(principal: Principal, addresses: string[]): Promise<CrmRecord | null> {
-    const m = await readableMatch(this.d.db, principal, 'email', addresses);
+    const m = await readableMatch(this.d.db, this.d.records, principal, 'email', addresses);
     return m ? ((await this.d.records.getRaw(m.recordId)) ?? null) : null;
   }
 

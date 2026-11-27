@@ -1,8 +1,8 @@
 import type { AttachmentDTO, AttachmentRef, CrmRecord } from '@titoforce/shared';
 import { type Db, toBuffer } from '../db/database.ts';
-import { assertCanEdit, objectPermission, type Principal } from '../platform/principal.ts';
+import { objectPermission, type Principal } from '../platform/principal.ts';
 import type { RecordService } from '../platform/records.ts';
-import { badRequest, chunk, newId, notFound, nowIso, placeholders } from '../util.ts';
+import { badRequest, chunk, forbidden, newId, notFound, nowIso, placeholders } from '../util.ts';
 import { sha256 } from './crypto.ts';
 
 interface AttachmentRow {
@@ -124,7 +124,7 @@ export class AttachmentService {
 
   async upload(principal: Principal, object: string, id: string, file: { fileName: string; contentType?: string | null; data: string }): Promise<AttachmentDTO> {
     const rec = await this.records.get(principal, object, id);
-    assertCanEdit(principal, rec.object, rec.ownerId);
+    if (!rec.access?.edit) throw forbidden(`You cannot edit this ${rec.object} record`);
     const data = this.decode(file.data);
     const [ref] = await this.store(this.db, rec.id, [{ fileName: file.fileName, contentType: file.contentType ?? '', data }], 'upload', principal.userId);
     return { ...ref!, recordId: rec.id, source: 'upload', createdBy: principal.userId, createdByName: principal.name, activity: null };
@@ -171,7 +171,7 @@ export class AttachmentService {
 
   async delete(principal: Principal, id: string): Promise<void> {
     const { record } = await this.findReadable(principal, id);
-    assertCanEdit(principal, record.object, record.ownerId);
+    if (!record.access?.edit) throw forbidden(`You cannot edit this ${record.object} record`);
     await this.db.run('DELETE FROM attachments WHERE id = ?', [id]);
   }
 }

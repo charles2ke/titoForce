@@ -25,7 +25,12 @@ project (v0.1), not a drop-in replacement for any of them. See [What is not ther
 - **Security**:
   - Roles with create, read, edit and delete access per object. Read, edit and delete can each be all records,
     own records or none.
-  - A permission to view sensitive fields.
+  - Field permissions per role: each field can be editable, read only or hidden. Unless a field permission says
+    otherwise, sensitive fields are hidden from roles without the permission to view them.
+  - Sharing rules give roles read or edit access to records they could not otherwise see: records owned by users with
+    chosen roles, or records that match conditions.
+  - Two-factor authentication with authenticator apps and recovery codes. Roles can require it.
+  - Single sign-on with OpenID Connect or SAML 2.0, optionally creating users on their first sign-in.
   - Setup, automation and agent administration permissions.
 - **Apps**: each app has its own navigation, home page and dashboard. Five are included: Sales, Service, Marketing,
   Work and People.
@@ -155,6 +160,8 @@ take precedence. [`.env.example`](.env.example) documents every server option. T
 | `TITO_SEED_DEMO`                          | `true` unless `NODE_ENV=production`                        | Load the demo company on first start                                                   |
 | `TITO_ADMIN_EMAIL`, `TITO_ADMIN_PASSWORD` | `admin@titoforce.example`, `titoforce` (demo) or generated | First administrator, created on first start only. A generated password is printed once |
 | `TITO_TRUST_PROXY`                        | `false`                                                    | Set to `true` only when direct server access is blocked and trusted proxies overwrite client-supplied forwarding headers |
+| `TITO_PUBLIC_URL`                         | the address of each request                                | Public address of titoForce, such as `https://crm.example.com`, used in single sign-on URLs |
+| `TITO_SECRET_KEY`                         | none                                                       | Encrypts two-factor secrets and SSO client secrets stored in the database. Keep it stable: changing or removing it makes stored secrets unreadable |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL`       | none, `https://api.openai.com/v1`                          | OpenAI or any OpenAI-compatible endpoint                                               |
 | `ANTHROPIC_API_KEY`                       | none                                                       | Anthropic                                                                              |
 | `TITO_AI_PROVIDER`, `TITO_AI_MODEL`       | auto-detected, see [AI providers](#ai-providers)           | Choose `openai`, `anthropic` or `offline`, and the model                               |
@@ -237,7 +244,8 @@ apps/
   server/   Fastify API (Node.js, native TypeScript)
     src/db/          SQLite and PostgreSQL adapters, schema and versioned migrations
     src/routes/      HTTP API routes
-    src/platform/    metadata, records, query builder, users and roles, list views, CSV import, notifications
+    src/platform/    metadata, records, query builder, users and roles, sharing rules, two-factor
+                     authentication, single sign-on (OIDC, SAML), list views, CSV import, notifications
     src/automation/  automation engine, actions, approval processes
     src/analytics/   reports, dashboards
     src/ai/          agent runtime, tools, providers (OpenAI-compatible, Anthropic), offline rules engine
@@ -288,8 +296,31 @@ npm run e2e         # builds the web app, then runs Playwright against a fresh d
   automatically when `NODE_ENV` is not `production`; set `TITO_SEED_DEMO=false` for any real deployment.
 - **Sessions** last 7 days and use HttpOnly, SameSite=Lax cookies, which are Secure in production. API clients can
   sign in with `"issueToken": true` and send the returned token as `Authorization: Bearer <token>`.
+- **Two-factor authentication** uses time-based codes (TOTP) from an authenticator app, and 10 single-use recovery
+  codes. When a role requires it, its users set it up at their next password sign-in. Turning it on, in settings or
+  while signing in, signs the user out everywhere else. Changing a password or deactivating a user ends sign-ins that
+  are still waiting for a code. Administrators can reset it for a user who lost their device.
+- **Single sign-on**:
+  - **Linking accounts:** the first sign-in through a provider links to the user with the same email address,
+    including administrators. Only connect identity providers you trust to verify email addresses. Set _Allowed
+    domains_ to limit which addresses a provider accepts.
+  - **Two-factor authentication** for single sign-on users is up to the identity provider; titoForce does not ask for
+    its own second factor. Users created on first sign-in have no password.
+  - **Sign-ins must start in titoForce.** SAML sign-ins started at the identity provider are not accepted, and
+    signing out does not sign out of the identity provider.
+  - **Public address:** set `TITO_PUBLIC_URL` when titoForce runs behind a proxy, so the addresses registered with the
+    identity provider match.
+- **Field permissions and sharing** apply everywhere records are read or changed: the API, search, reports, list
+  views, related lists, exports and agents. Roles with Setup access ignore field permissions. Changes to roles,
+  objects and fields are rejected when they would show a role a hidden value through a record name, a formula or a
+  roll-up (including the roll-up's filter and relationship); sensitive fields count as hidden for roles that cannot
+  view them. Sharing never grants delete access, edit access also needs the role's own edit permission, and only the
+  owner, or a role that can read and edit all records of the object, can change a record's owner.
+- **Secrets at rest:** set `TITO_SECRET_KEY` to encrypt two-factor secrets and SSO client secrets in the database.
+  Without it they are stored unencrypted, and a production server logs a warning at startup.
 - **Rate limits** are kept in memory by each server process:
   - Sign-in: 10 failures per account and 50 per client IP in 15 minutes.
+  - Two-factor codes, and passwords that confirm two-factor changes: 5 failures per user in 15 minutes.
   - Password changes: 10 failures per user in 15 minutes.
   - Agent chat: 30 messages per user per minute.
   - Public web forms: 10 submissions per client IP per form per minute.
@@ -324,8 +355,7 @@ titoForce covers the core of each product area but none of these products in ful
 - **Sales and finance**: multi-currency, territories, CPQ pricing rules, invoicing.
 - **Marketing**: email marketing campaigns and journeys.
 - **HR**: payroll, benefits and compensation planning.
-- **Security**: SSO (SAML/OIDC), multi-factor authentication, field-level permissions per role (beyond the sensitive
-  flag), sharing rules.
+- **Security**: single logout, SCIM user provisioning, passkeys, and sharing with individual users or groups.
 - **Platform**: multi-tenancy, sandboxes, translations, mobile apps, real-time collaboration, a drag-and-drop page
   layout editor.
 

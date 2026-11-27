@@ -1,8 +1,9 @@
 import type { ObjectDef, RecordData } from '@titoforce/shared';
 import { type Db, parseJson } from '../db/database.ts';
-import { chunk, placeholders } from '../util.ts';
+import { AppError, chunk, placeholders } from '../util.ts';
 import type { MetadataService } from './metadata.ts';
-import { canRead, type Principal } from './principal.ts';
+import type { Principal } from './principal.ts';
+import type { RecordService } from './records.ts';
 
 export type ContactKind = 'email' | 'phone';
 
@@ -81,17 +82,25 @@ export interface ContactMatch {
  * Finds the best record for each email address or phone number (keys are normalized values): contacts first, then
  * leads, accounts, candidates and other objects; most recently updated wins within an object.
  */
-export async function matchContacts(db: Db, kind: ContactKind, values: string[], principal?: Principal): Promise<Map<string, ContactMatch>> {
+export async function matchContacts(db: Db, kind: ContactKind, values: string[], access?: { principal: Principal; records: RecordService }): Promise<Map<string, ContactMatch>> {
   const wanted = [...new Set(values.map((v) => normalizeContact(kind, v)).filter((v): v is string => !!v))];
   const best = new Map<string, ContactMatch & { rank: number; updatedAt: string }>();
   for (const part of chunk(wanted, 200)) {
-    const rows = await db.all<{ value: string; id: string; object_api_name: string; name: string; owner_id: string | null; updated_at: string }>(
-      `SELECT cp.value, r.id, r.object_api_name, r.name, r.owner_id, r.updated_at FROM contact_points cp JOIN records r ON r.id = cp.record_id
+    const rows = await db.all<{ value: string; field: string; id: string; object_api_name: string; name: string; owner_id: string | null; updated_at: string }>(
+      `SELECT cp.value, cp.field, r.id, r.object_api_name, r.name, r.owner_id, r.updated_at FROM contact_points cp JOIN records r ON r.id = cp.record_id
        WHERE cp.kind = ? AND cp.value IN (${placeholders(part.length)})`,
       [kind, ...part],
     );
     for (const r of rows) {
-      if (principal && !canRead(principal, r.object_api_name, r.owner_id)) continue;
+      if (access) {
+        try {
+          const record = await access.records.get(access.principal, r.object_api_name, r.id);
+          if (!(r.field in record.fields)) continue;
+        } catch (err) {
+          if (err instanceof AppError && err.status === 404) continue;
+          throw err;
+        }
+      }
       const rank = PRIORITY.includes(r.object_api_name) ? PRIORITY.indexOf(r.object_api_name) : PRIORITY.length;
       const current = best.get(r.value);
       if (!current || rank < current.rank || (rank === current.rank && r.updated_at > current.updatedAt)) {
@@ -103,11 +112,11 @@ export async function matchContacts(db: Db, kind: ContactKind, values: string[],
 }
 
 /** The match of the first value (in the order given) whose record the principal can read. */
-export async function readableMatch(db: Db, principal: Principal, kind: ContactKind, values: string[]): Promise<ContactMatch | null> {
-  const matches = await matchContacts(db, kind, values, principal);
+export async function readableMatch(db: Db, records: RecordService, principal: Principal, kind: ContactKind, values: string[]): Promise<ContactMatch | null> {
+  const matches = await matchContacts(db, kind, values, { principal, records });
   for (const v of values) {
     const m = matches.get(normalizeContact(kind, v) ?? '');
-    if (m && canRead(principal, m.object, m.ownerId)) return m;
+    if (m) return m;
   }
   return null;
 }

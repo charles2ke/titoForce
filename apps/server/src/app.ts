@@ -12,6 +12,7 @@ import { integrationRoutes } from './routes/integrations.ts';
 import { platformRoutes } from './routes/platform.ts';
 import { publicRoutes } from './routes/public.ts';
 import { recordRoutes } from './routes/records.ts';
+import { ssoRoutes } from './routes/sso.ts';
 import type { Services } from './services.ts';
 import { AppError } from './util.ts';
 
@@ -28,7 +29,8 @@ const CSP = [
   "frame-ancestors 'none'",
 ].join('; ');
 
-const isJson = (contentType: string | undefined) => contentType?.split(';')[0]?.trim().toLowerCase() === 'application/json';
+const mediaType = (contentType: string | undefined) => contentType?.split(';')[0]?.trim().toLowerCase();
+const isJson = (contentType: string | undefined) => mediaType(contentType) === 'application/json';
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH']);
 
 export interface AppOptions {
@@ -71,7 +73,9 @@ export async function buildApp(s: Services, opts: AppOptions = {}): Promise<Fast
     if (!req.url.startsWith('/api/')) return;
     if (req.routeOptions.config?.webhook) return;
     // CSRF defence: browsers cannot send a cross-origin JSON request without a CORS preflight, which we never allow.
-    if (BODY_METHODS.has(req.method) && !isJson(req.headers['content-type'])) {
+    // Routes marked formPost (the SAML endpoint, which identity providers post to) protect themselves.
+    const formPost = req.routeOptions.config?.formPost && mediaType(req.headers['content-type']) === 'application/x-www-form-urlencoded';
+    if (BODY_METHODS.has(req.method) && !isJson(req.headers['content-type']) && !formPost) {
       throw new AppError(415, 'unsupported_media_type', 'Send requests with "Content-Type: application/json"');
     }
     const header = req.headers.authorization;
@@ -129,6 +133,7 @@ export async function buildApp(s: Services, opts: AppOptions = {}): Promise<Fast
   });
 
   authRoutes(app, s);
+  ssoRoutes(app, s);
   platformRoutes(app, s);
   recordRoutes(app, s);
   automationRoutes(app, s);

@@ -15,7 +15,7 @@ import {
 import { type Db, parseJson } from '../db/database.ts';
 import type { MetadataService } from '../platform/metadata.ts';
 import { isNumericField } from '../platform/metadata.ts';
-import { canViewSensitive, type Principal } from '../platform/principal.ts';
+import { canSeeField, type Principal } from '../platform/principal.ts';
 import { fieldExpr } from '../platform/query-builder.ts';
 import type { RecordService } from '../platform/records.ts';
 import { AppError, badRequest, forbidden, newId, notFound, nowIso } from '../util.ts';
@@ -62,8 +62,8 @@ export class AnalyticsService {
     return f;
   }
 
-  private assertVisible(principal: Principal, f: FieldDef): void {
-    if (f.sensitive && !canViewSensitive(principal)) throw forbidden(`You do not have access to ${f.label}`);
+  private assertVisible(principal: Principal, def: ObjectDef, f: FieldDef): void {
+    if (!canSeeField(principal, def.apiName, f)) throw forbidden(`You do not have access to ${f.label}`);
   }
 
   validateSpec(object: string, spec: AggregateSpec): void {
@@ -83,9 +83,9 @@ export class AnalyticsService {
   async aggregate(principal: Principal, object: string, spec: AggregateSpec): Promise<ReportResult> {
     const def = this.metadata.require(object);
     this.validateSpec(object, spec);
-    const where = this.records.buildWhere(principal, def, spec.filters ?? null);
+    const where = await this.records.buildWhere(principal, def, spec.filters ?? null);
     const metricField = spec.metric.fn === 'count' ? null : this.field(def, spec.metric.field!);
-    if (metricField) this.assertVisible(principal, metricField);
+    if (metricField) this.assertVisible(principal, def, metricField);
     const metricSql = metricField ? `${spec.metric.fn.toUpperCase()}(${fieldExpr(this.db, def, metricField.apiName).expr})` : 'COUNT(*)';
     const format: ReportResult['format'] = metricField && spec.metric.fn !== 'count' ? (numberFormat(metricField) ?? 'number') : 'number';
     const metricLabel = metricField ? `${{ sum: 'Sum', avg: 'Average', min: 'Min', max: 'Max', count: 'Count' }[spec.metric.fn]} of ${metricField.label}` : 'Record count';
@@ -95,7 +95,7 @@ export class AnalyticsService {
     if (!spec.groupBy) return { rows: [{ key: null, label: metricLabel, value: total }], total, metricLabel, format };
 
     const gf = this.field(def, spec.groupBy.field);
-    this.assertVisible(principal, gf);
+    this.assertVisible(principal, def, gf);
     const fe = fieldExpr(this.db, def, gf.apiName);
     const isDate = fe.kind === 'date';
     const interval = isDate ? (spec.groupBy.interval ?? 'month') : undefined;

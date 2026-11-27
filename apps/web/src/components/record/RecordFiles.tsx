@@ -37,7 +37,7 @@ export function FilesCard({ def, record }: { def: ObjectDef; record: CrmRecord }
   const files = useRecordFiles(def, record);
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  const canEdit = perms.canEdit(def.apiName, record.ownerId);
+  const canEdit = perms.canEdit(record);
   const maxBytes = status.data?.attachmentMaxBytes ?? null;
 
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['attachments'] }), qc.invalidateQueries({ queryKey: ['timeline'] })]);

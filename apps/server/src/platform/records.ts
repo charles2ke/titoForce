@@ -1,6 +1,7 @@
 import {
   type CrmRecord,
   evaluateExpression,
+  type RecordAccess,
   type FieldDef,
   type FilterGroup,
   isBlank,
@@ -21,17 +22,9 @@ import { AppError, badRequest, chunk, clamp, forbidden, newId, notFound, nowIso,
 import { indexContactPoints, touchesContactPoints } from './contact-points.ts';
 import type { EventBus } from './events.ts';
 import { isComputedField, type MetadataService } from './metadata.ts';
-import {
-  assertCanCreate,
-  assertCanDelete,
-  assertCanEdit,
-  assertCanReadObject,
-  canRead,
-  canViewSensitive,
-  objectPermission,
-  type Principal,
-} from './principal.ts';
+import { assertCanCreate, assertCanReadObject, canChangeOwner, canSeeField, fieldAccessOf, objectPermission, type Principal } from './principal.ts';
 import { type BuildContext, fieldExpr, filterSql, searchTermsSql, sortSql } from './query-builder.ts';
+import { type Predicate, type SharingService, sharedRecordsSql } from './sharing.ts';
 import type { UserService } from './users.ts';
 
 interface RecordRow {
@@ -83,6 +76,16 @@ const REF_RE = /^[a-z0-9_]{1,64}$/i;
 const SEARCHABLE = new Set(['text', 'email', 'phone', 'url', 'picklist', 'multipicklist', 'longtext']);
 
 const round = (n: number, places: number): number => Math.round(n * 10 ** places) / 10 ** places;
+
+const ALL: Predicate = { sql: '1 = 1', params: [] };
+const NONE: Predicate = { sql: '1 = 0', params: [] };
+
+/** Records of one object that a principal may read, edit and delete, as SQL conditions on the `records` table. */
+export interface AccessScope {
+  read: Predicate;
+  edit: Predicate;
+  delete: Predicate;
+}
 
 /** Validates and normalizes a raw input value for a field. Blank values become null. */
 export function coerceValue(field: FieldDef, raw: unknown): unknown {
@@ -225,16 +228,73 @@ export class RecordService {
   private db: Db;
   private metadata: MetadataService;
   private users: UserService;
+  private sharing: SharingService;
   private events: EventBus;
 
   /** Set by the integrations layer. */
   enrichTimeline: TimelineEnricher | null = null;
 
-  constructor(db: Db, metadata: MetadataService, users: UserService, events: EventBus) {
+  constructor(db: Db, metadata: MetadataService, users: UserService, sharing: SharingService, events: EventBus) {
     this.db = db;
     this.metadata = metadata;
     this.users = users;
+    this.sharing = sharing;
     this.events = events;
+  }
+
+  // ---------- access ----------
+
+  /**
+   * Which records of an object the principal may read, edit and delete. `own` access covers the principal's records
+   * plus those shared with their role by sharing rules; `edit` rules also allow editing. Sharing never grants delete.
+   */
+  async accessScope(principal: Principal, def: ObjectDef, db: Db = this.db): Promise<AccessScope> {
+    const perm = objectPermission(principal, def.apiName);
+    if (perm.read === 'none') return { read: NONE, edit: NONE, delete: NONE };
+    const readAll = perm.read === 'all';
+    const rules = !readAll || perm.edit === 'own' ? await this.sharing.rulesFor(principal, def.apiName, db) : [];
+    const ctx = this.ctx(principal, def, db);
+    return {
+      read: readAll ? ALL : sharedRecordsSql(ctx, principal.userId, rules),
+      edit:
+        perm.edit === 'none' ? NONE : readAll && perm.edit === 'all' ? ALL : sharedRecordsSql(ctx, principal.userId, rules.filter((r) => r.access === 'edit')),
+      delete: perm.delete === 'none' ? NONE : readAll && perm.delete === 'all' ? ALL : sharedRecordsSql(ctx, principal.userId, []),
+    };
+  }
+
+  /** The principal's access to one record of the object (all false when it does not exist). */
+  async recordAccess(principal: Principal, def: ObjectDef, id: string, db: Db = this.db): Promise<RecordAccess & { read: boolean }> {
+    const scope = await this.accessScope(principal, def, db);
+    const row = await db.get<{ r: number; e: number; d: number }>(
+      `SELECT CASE WHEN ${scope.read.sql} THEN 1 ELSE 0 END AS r, CASE WHEN ${scope.edit.sql} THEN 1 ELSE 0 END AS e,
+       CASE WHEN ${scope.delete.sql} THEN 1 ELSE 0 END AS d FROM records WHERE records.id = ? AND records.object_api_name = ?`,
+      [...scope.read.params, ...scope.edit.params, ...scope.delete.params, id, def.apiName],
+    );
+    const read = !!Number(row?.r ?? 0);
+    return { read, edit: read && !!Number(row?.e ?? 0), delete: read && !!Number(row?.d ?? 0) };
+  }
+
+  /** The ids among `ids` (records of one object) that the principal can read. */
+  private async readableIds(principal: Principal, object: string, ids: string[]): Promise<Set<string>> {
+    const def = this.metadata.get(object);
+    if (!def || !ids.length) return new Set();
+    const { read } = await this.accessScope(principal, def);
+    if (read === ALL) return new Set(ids);
+    if (read === NONE) return new Set();
+    const out = new Set<string>();
+    for (const part of chunk(ids, 300)) {
+      const rows = await this.db.all<{ id: string }>(`SELECT records.id FROM records WHERE records.id IN (${placeholders(part.length)}) AND ${read.sql}`, [
+        ...part,
+        ...read.params,
+      ]);
+      for (const r of rows) out.add(r.id);
+    }
+    return out;
+  }
+
+  /** A record as the principal sees it: hidden fields removed, plus what they may do with it. */
+  private present(principal: Principal, rec: CrmRecord, access: RecordAccess): CrmRecord {
+    return { ...this.redact(principal, rec), access: { edit: access.edit, delete: access.delete } };
   }
 
   // ---------- reads ----------
@@ -248,16 +308,18 @@ export class RecordService {
   /** Loads a readable record of the expected object (or any object when omitted). Unreadable records are reported as not found. */
   async get(principal: Principal, object: string | null, id: string): Promise<CrmRecord> {
     const rec = await this.getRaw(id);
-    if (!rec || (object && rec.object !== object) || !this.metadata.get(rec.object)) throw notFound('Record not found');
-    if (objectPermission(principal, rec.object).read === 'none' || !canRead(principal, rec.object, rec.ownerId)) throw notFound('Record not found');
-    return this.redact(principal, rec);
+    const def = rec && (!object || rec.object === object) ? this.metadata.get(rec.object) : undefined;
+    if (!rec || !def) throw notFound('Record not found');
+    const access = await this.recordAccess(principal, def, rec.id);
+    if (!access.read) throw notFound('Record not found');
+    return this.present(principal, rec, access);
   }
 
-  /** Removes sensitive fields the principal may not see. */
+  /** Removes the fields the principal may not see (field-level security). */
   redact(principal: Principal, rec: CrmRecord): CrmRecord {
-    if (canViewSensitive(principal)) return rec;
+    if (!principal.permissions) return rec;
     const def = this.metadata.get(rec.object);
-    const hidden = def?.fields.filter((f) => f.sensitive).map((f) => f.apiName) ?? [];
+    const hidden = def?.fields.filter((f) => !canSeeField(principal, def.apiName, f)).map((f) => f.apiName) ?? [];
     if (!hidden.some((h) => h in rec.fields)) return rec;
     const fields = { ...rec.fields };
     for (const h of hidden) delete fields[h];
@@ -265,22 +327,22 @@ export class RecordService {
   }
 
   private assertFieldsVisible(principal: Principal, def: ObjectDef, names: string[]): void {
-    if (canViewSensitive(principal)) return;
+    if (!principal.permissions) return;
     for (const n of names) {
       const f = def.fields.find((x) => x.apiName === n);
-      if (f?.sensitive) throw forbidden(`You do not have access to ${f.label}`);
+      if (f && !canSeeField(principal, def.apiName, f)) throw forbidden(`You do not have access to ${f.label}`);
     }
   }
 
-  /** WHERE clause for the readable records of an object (sharing + filters + free text). */
-  buildWhere(
+  /** WHERE clause for the readable records of an object (sharing + filters + free text), and the principal's access scope. */
+  async buildWhere(
     principal: Principal,
     def: ObjectDef,
     filters?: FilterGroup | null | (FilterGroup | null | undefined)[],
     q?: string | null,
     db: Db = this.db,
-  ): { sql: string; params: SqlParam[] } {
-    const level = assertCanReadObject(principal, def.apiName);
+  ): Promise<{ sql: string; params: SqlParam[]; scope: AccessScope }> {
+    assertCanReadObject(principal, def.apiName);
     // Several groups are ANDed together (e.g. a list view's filters plus ad-hoc filters).
     const groups = (Array.isArray(filters) ? filters : [filters]).filter((g): g is FilterGroup => !!g?.rules?.length);
     const parts = ['records.object_api_name = ?'];
@@ -291,16 +353,17 @@ export class RecordService {
       parts.push(f.sql);
       params.push(...f.params);
     }
-    if (level === 'own') {
-      parts.push('records.owner_id = ?');
-      params.push(principal.userId ?? '-');
+    const scope = await this.accessScope(principal, def, db);
+    if (scope.read !== ALL) {
+      parts.push(scope.read.sql);
+      params.push(...scope.read.params);
     }
     if (q?.trim()) {
       const s = searchTermsSql(q);
       parts.push(s.sql);
       params.push(...s.params);
     }
-    return { sql: parts.join(' AND '), params };
+    return { sql: parts.join(' AND '), params, scope };
   }
 
   ctx(principal: Principal | null, def: ObjectDef, db: Db = this.db): BuildContext {
@@ -309,19 +372,20 @@ export class RecordService {
 
   async query(principal: Principal, object: string, query: RecordQuery = {}): Promise<QueryResponse> {
     const def = this.metadata.require(object);
-    const where = this.buildWhere(principal, def, [query.filters, ...(query.andFilters ?? [])], query.q);
+    const where = await this.buildWhere(principal, def, [query.filters, ...(query.andFilters ?? [])], query.q);
     const pageSize = clamp(Math.floor(query.pageSize ?? 50), 1, 500);
     const page = Math.max(1, Math.floor(query.page ?? 1));
     const sort = query.sort?.field ? query.sort : { field: 'updated_at', dir: 'desc' as const };
     this.assertFieldsVisible(principal, def, [sort.field]);
     const order = sortSql(this.ctx(principal, def), sort);
+    const { edit, delete: del } = where.scope;
     const total = await this.db.get<{ c: number }>(`SELECT COUNT(*) AS c FROM records WHERE ${where.sql}`, where.params);
-    const rows = await this.db.all<RecordRow>(`SELECT ${COLUMNS} FROM records WHERE ${where.sql} ORDER BY ${order} LIMIT ? OFFSET ?`, [
-      ...where.params,
-      pageSize,
-      (page - 1) * pageSize,
-    ]);
-    const records = rows.map((r) => this.redact(principal, rowToRecord(r)));
+    const rows = await this.db.all<RecordRow & { can_edit: number; can_delete: number }>(
+      `SELECT ${COLUMNS}, CASE WHEN ${edit.sql} THEN 1 ELSE 0 END AS can_edit, CASE WHEN ${del.sql} THEN 1 ELSE 0 END AS can_delete
+       FROM records WHERE ${where.sql} ORDER BY ${order} LIMIT ? OFFSET ?`,
+      [...edit.params, ...del.params, ...where.params, pageSize, (page - 1) * pageSize],
+    );
+    const records = rows.map((r) => this.present(principal, rowToRecord(r), { edit: !!Number(r.can_edit), delete: !!Number(r.can_delete) }));
     return { records, total: Number(total?.c ?? 0), page, pageSize, refs: await this.resolveRefs(principal, records) };
   }
 
@@ -333,7 +397,7 @@ export class RecordService {
     for (const def of this.metadata.list()) {
       if (opts.objects && !opts.objects.includes(def.apiName)) continue;
       if (objectPermission(principal, def.apiName).read === 'none') continue;
-      const where = this.buildWhere(principal, def, null, text);
+      const where = await this.buildWhere(principal, def, null, text);
       const rows = await this.db.all<RecordRow>(
         `SELECT ${COLUMNS} FROM records WHERE ${where.sql} ORDER BY CASE WHEN LOWER(records.name) LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, records.updated_at DESC LIMIT ?`,
         [...where.params, `%${text.trim().toLowerCase().replace(/[\\%_]/g, (m) => `\\${m}`)}%`, limit],
@@ -372,7 +436,7 @@ export class RecordService {
     for (const { object: child, field } of refsFrom) {
       if (child.apiName === 'activity' && field.apiName === 'related_to') continue; // shown on the timeline
       if (objectPermission(principal, child.apiName).read === 'none') continue;
-      if (!canViewSensitive(principal) && field.sensitive) continue;
+      if (!canSeeField(principal, child.apiName, field)) continue;
       const res = await this.query(principal, child.apiName, {
         filters: { match: 'all', rules: [{ field: field.apiName, op: 'eq', value: id }] },
         pageSize: 10,
@@ -398,7 +462,8 @@ export class RecordService {
     const items: TimelineItem[] = [];
     let refs: RefMap = {};
     const activity = this.metadata.get('activity');
-    if (activity?.fields.some((f) => f.apiName === 'related_to') && objectPermission(principal, 'activity').read !== 'none') {
+    const relatedTo = activity?.fields.find((f) => f.apiName === 'related_to');
+    if (relatedTo && objectPermission(principal, 'activity').read !== 'none' && canSeeField(principal, 'activity', relatedTo)) {
       const res = await this.query(principal, 'activity', {
         filters: { match: 'all', rules: [{ field: 'related_to', op: 'eq', value: id }] },
         pageSize: 200,
@@ -429,12 +494,13 @@ export class RecordService {
       'SELECT id, event, changes, actor_type, actor_name, created_at FROM record_history WHERE record_id = ? ORDER BY created_at DESC LIMIT 200',
       [id],
     );
-    const showSensitive = canViewSensitive(principal);
+    const hidden = new Set(def.fields.filter((f) => !canSeeField(principal, def.apiName, f)).map((f) => f.apiName));
     const lookupIds = new Set<string>();
     const parsed = history.map((h) => ({ ...h, list: parseJson<FieldChange[]>(h.changes, []) }));
     for (const h of parsed) {
       for (const c of h.list) {
         const f = def.fields.find((x) => x.apiName === c.field);
+        if (hidden.has(c.field)) continue;
         if (f?.type === 'lookup' || f?.type === 'user' || c.field === 'owner_id') {
           for (const v of [c.from, c.to]) if (typeof v === 'string') lookupIds.add(v);
         }
@@ -445,7 +511,7 @@ export class RecordService {
       const changes = h.list
         .map((c) => {
           const f = def.fields.find((x) => x.apiName === c.field);
-          if (f?.sensitive && !showSensitive) return { field: c.field, label: f.label, from: '•••', to: '•••' };
+          if (f && hidden.has(f.apiName)) return { field: c.field, label: f.label, from: '•••', to: '•••' };
           const display = (v: unknown) => (typeof v === 'string' && names[v] ? names[v].name : v);
           return { field: c.field, label: c.field === 'owner_id' ? 'Owner' : (f?.label ?? c.field), from: display(c.from), to: display(c.to) };
         })
@@ -489,12 +555,17 @@ export class RecordService {
     const refs: RefMap = {};
     const unique = [...new Set(ids.filter((x) => typeof x === 'string' && REF_RE.test(x)))];
     for (const part of chunk(unique, 300)) {
-      const rows = await this.db.all<{ id: string; name: string; object_api_name: string; owner_id: string | null }>(
-        `SELECT id, name, object_api_name, owner_id FROM records WHERE id IN (${placeholders(part.length)})`,
+      const rows = await this.db.all<{ id: string; name: string; object_api_name: string }>(
+        `SELECT id, name, object_api_name FROM records WHERE id IN (${placeholders(part.length)})`,
         part,
       );
+      const readable = new Set<string>();
+      for (const object of new Set(rows.map((r) => r.object_api_name))) {
+        const ids = rows.filter((r) => r.object_api_name === object).map((r) => r.id);
+        for (const id of await this.readableIds(principal, object, ids)) readable.add(id);
+      }
       for (const r of rows) {
-        refs[r.id] = canRead(principal, r.object_api_name, r.owner_id) ? { name: r.name, object: r.object_api_name } : { name: '(restricted)', object: r.object_api_name };
+        refs[r.id] = readable.has(r.id) ? { name: r.name, object: r.object_api_name } : { name: '(restricted)', object: r.object_api_name };
       }
       const missing = part.filter((x) => !refs[x]);
       if (missing.length) {
@@ -519,11 +590,11 @@ export class RecordService {
 
   // ---------- writes ----------
 
-  private coerceInput(principal: Principal, def: ObjectDef, input: RecordData): { values: RecordData; ownerId: string | null | undefined } {
+  /** Validates input values. On updates, `current` lets clients send back unchanged values of read-only fields. */
+  private coerceInput(principal: Principal, def: ObjectDef, input: RecordData, current?: CrmRecord): { values: RecordData; ownerId: string | null | undefined } {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw badRequest('Record fields must be an object');
     const values: RecordData = {};
     let ownerId: string | null | undefined;
-    const sensitiveOk = canViewSensitive(principal);
     for (const [key, raw] of Object.entries(input)) {
       if (key === 'owner_id' || key === 'ownerId') {
         ownerId = raw === null || raw === undefined || raw === '' ? null : String(raw);
@@ -535,7 +606,12 @@ export class RecordService {
         throw badRequest(`Unknown field "${key}" on ${def.label}`, { field: key });
       }
       if (isComputedField(f)) throw badRequest(`${f.label} is calculated automatically and cannot be set`, { field: key });
-      if (f.sensitive && !sensitiveOk) throw forbidden(`You cannot set ${f.label}`);
+      const access = fieldAccessOf(principal, def.apiName, f);
+      if (access !== 'edit') {
+        // Never compare hidden values: the outcome would reveal them.
+        if (access === 'read' && current && same(current.fields[key], coerceValue(f, raw))) continue;
+        throw forbidden(`You cannot set ${f.label}`);
+      }
       values[key] = coerceValue(f, raw);
     }
     return { values, ownerId };
@@ -577,10 +653,12 @@ export class RecordService {
     return { fields, name };
   }
 
+  /** Lower-cased text for free-text search. Sensitive fields and fields hidden from any role are left out. */
   private searchText(def: ObjectDef, name: string, fields: RecordData): string {
+    const hidden = this.users.fieldsHiddenFromSomeRole(def.apiName);
     const parts = [name];
     for (const f of def.fields) {
-      if (f.sensitive) continue;
+      if (f.sensitive || hidden.has(f.apiName)) continue;
       if (!SEARCHABLE.has(f.type) && !(f.type === 'formula' && f.formulaType === 'text')) continue;
       const v = fields[f.apiName];
       if (isBlank(v)) continue;
@@ -612,7 +690,8 @@ export class RecordService {
       );
       if (rows.length) {
         const label = def.fields.find((f) => f.apiName === name)?.label ?? name;
-        const visible = rows.filter((r) => canRead(principal, def.apiName, r.owner_id));
+        const readable = await this.readableIds(principal, def.apiName, rows.map((r) => r.id));
+        const visible = rows.filter((r) => readable.has(r.id));
         throw new AppError(409, 'duplicate', `Possible duplicate ${def.label.toLowerCase()}${visible[0] ? ` "${visible[0].name}"` : ''} with the same ${label}`, {
           field: name,
           duplicates: visible.map((r) => ({ id: r.id, name: r.name })),
@@ -725,7 +804,12 @@ export class RecordService {
     if (!opts.silent) {
       await this.events.emit({ type: 'created', object, record, previous: null, changed: [...Object.keys(fields), 'owner_id'], principal });
     }
-    return this.redact(principal, (await this.getRaw(id)) ?? record);
+    return this.presentCurrent(principal, def, (await this.getRaw(id)) ?? record);
+  }
+
+  /** Re-checks access after a write: automations may have changed the owner or fields that sharing rules match. */
+  private async presentCurrent(principal: Principal, def: ObjectDef, rec: CrmRecord): Promise<CrmRecord> {
+    return this.present(principal, rec, await this.recordAccess(principal, def, rec.id));
   }
 
   async update(principal: Principal, object: string, id: string, input: RecordData, opts: WriteOptions = {}): Promise<CrmRecord> {
@@ -756,10 +840,12 @@ export class RecordService {
       ? await this.db.get<RecordRow>(`SELECT ${COLUMNS} FROM records WHERE id = ?`, [id])
       : undefined;
     const current = object === 'web_form' ? (snapshot ? rowToRecord(snapshot) : undefined) : await this.getRaw(id);
-    if (!current || current.object !== object || !canRead(principal, object, current.ownerId)) throw notFound(`${def.label} not found`);
-    assertCanEdit(principal, object, current.ownerId);
+    if (!current || current.object !== object) throw notFound(`${def.label} not found`);
+    const access = await this.recordAccess(principal, def, id);
+    if (!access.read) throw notFound(`${def.label} not found`);
+    if (!access.edit) throw forbidden(`You cannot edit this ${object} record`);
     const effectiveInput = incrementSubmissions ? { ...input, submissions: Number(current.fields.submissions ?? 0) + 1 } : input;
-    const { values, ownerId } = this.coerceInput(principal, def, effectiveInput);
+    const { values, ownerId } = this.coerceInput(principal, def, effectiveInput, current);
     for (const [k, v] of Object.entries(values)) {
       const f = def.fields.find((x) => x.apiName === k)!;
       if (f.required && isBlank(v)) throw badRequest(`${f.label} is required`, { field: k });
@@ -771,6 +857,7 @@ export class RecordService {
     let newOwner = current.ownerId;
     if (ownerId !== undefined && ownerId !== current.ownerId) {
       if (!ownerId) throw badRequest('Owner is required', { field: 'owner_id' });
+      if (!canChangeOwner(principal, def.apiName, current.ownerId)) throw forbidden(`You can only change the owner of ${def.pluralLabel.toLowerCase()} you own`);
       await this.assertOwner(ownerId);
       newOwner = ownerId;
     }
@@ -781,7 +868,7 @@ export class RecordService {
     const changed = new Set<string>();
     for (const k of new Set([...Object.keys(current.fields), ...Object.keys(fields)])) if (!same(current.fields[k], fields[k])) changed.add(k);
     if (newOwner !== current.ownerId) changed.add('owner_id');
-    if (!changed.size) return this.redact(principal, current);
+    if (!changed.size) return this.present(principal, current, access);
 
     const record: CrmRecord = { ...current, name, ownerId: newOwner, fields, updatedAt: now, updatedBy: principal.userId };
     this.checkValidationRules(def, toFlat(record));
@@ -822,14 +909,16 @@ export class RecordService {
       throw notFound(`${def.label} not found`);
     }
     if (!opts.silent) await this.events.emit({ type: 'updated', object, record, previous: current, changed: [...changed], principal });
-    return this.redact(principal, (await this.getRaw(id)) ?? record);
+    return this.presentCurrent(principal, def, (await this.getRaw(id)) ?? record);
   }
 
   async delete(principal: Principal, object: string, id: string, opts: WriteOptions = {}): Promise<{ deleted: number }> {
     const def = this.metadata.require(object);
     const root = await this.getRaw(id);
-    if (!root || root.object !== object || !canRead(principal, object, root.ownerId)) throw notFound(`${def.label} not found`);
-    assertCanDelete(principal, object, root.ownerId);
+    if (!root || root.object !== object) throw notFound(`${def.label} not found`);
+    const access = await this.recordAccess(principal, def, id);
+    if (!access.read) throw notFound(`${def.label} not found`);
+    if (!access.delete) throw forbidden(`You cannot delete this ${object} record`);
     const deleted: CrmRecord[] = [];
 
     await this.db.transaction(async (tx) => {
@@ -932,6 +1021,18 @@ export class RecordService {
     await this.recalculateObject(object, { force: true });
   }
 
+  /** Rewrites the search text of an object's records, e.g. after field permissions changed which fields are searchable. */
+  async reindexSearch(object: string): Promise<void> {
+    const def = this.metadata.get(object);
+    if (!def) return;
+    const rows = await this.db.all<{ id: string; name: string; data: unknown }>('SELECT id, name, data FROM records WHERE object_api_name = ?', [object]);
+    for (const part of chunk(rows, 200)) {
+      await this.db.transaction(async (tx) => {
+        for (const r of part) await tx.run('UPDATE records SET search_text = ? WHERE id = ?', [this.searchText(def, r.name, parseJson<RecordData>(r.data, {})), r.id]);
+      });
+    }
+  }
+
   /** Recomputes names, formulas and roll-ups of every record (after metadata changes). `force` also rewrites unchanged rows' search text. */
   async recalculateObject(object: string, opts: { force?: boolean } = {}): Promise<number> {
     const def = this.metadata.require(object);
@@ -977,7 +1078,7 @@ export class RecordService {
   /** CSV export of the readable records matching a query (max 10k rows). */
   async exportCsv(principal: Principal, object: string, query: RecordQuery = {}): Promise<string> {
     const def = this.metadata.require(object);
-    const visible = def.fields.filter((f) => !f.sensitive || canViewSensitive(principal));
+    const visible = def.fields.filter((f) => canSeeField(principal, def.apiName, f));
     const lines: string[] = [];
     const esc = (v: unknown): string => {
       let s = stringify(v);

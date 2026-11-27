@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AccessLevel, ObjectDef, ObjectPermission, RoleDef, RolePermissions } from '@titoforce/shared';
 import { Plus, RotateCcw, Save, ShieldCheck, Trash } from 'lucide-react';
-import { useId, useState } from 'react';
+import { type Dispatch, type SetStateAction, useEffect, useId, useRef, useState } from 'react';
 import { api, errorMessage } from '../../api.ts';
 import { useConfirm, useToast } from '../../components/feedback.tsx';
 import { Badge, Button, cx, EmptyState, ErrorBanner, FormField, IconButton, Loading, Modal, ObjectTile, PageHeader, Toggle } from '../../components/ui.tsx';
 import { invalidateMetadata, useAuth, useObjects, useUsers } from '../../lib/hooks.ts';
+import { type FieldListView, FieldPermissions } from './FieldPermissions.tsx';
 
 const ROLE_ID_RE = /^[a-z][a-z0-9_]{1,39}$/;
 const NO_ACCESS: ObjectPermission = { read: 'none', create: false, edit: 'none', delete: 'none' };
@@ -23,7 +24,23 @@ const CAPABILITIES: { key: Capability; label: string; help: string }[] = [
   { key: 'manageAgents', label: 'Manage AI agents', help: 'Create and edit AI agents and see every agent run.' },
 ];
 
-const blankPermissions = (): RolePermissions => ({ setup: false, viewSensitive: false, manageAutomations: false, manageAgents: false, objects: { '*': { ...NO_ACCESS } } });
+const blankPermissions = (): RolePermissions => ({ setup: false, viewSensitive: false, manageAutomations: false, manageAgents: false, requireMfa: false, objects: { '*': { ...NO_ACCESS } }, fields: {} });
+
+/** Permissions as the server stores them: optional settings filled in. */
+const withDefaults = (p: RolePermissions): RolePermissions => ({ ...p, requireMfa: !!p.requireMfa, fields: p.fields ?? {} });
+
+/** Comparable form of permissions, so settings that are only missing or reordered don't count as changes. */
+function permissionsKey(p: RolePermissions): string {
+  const sorted = (v: unknown): unknown =>
+    v && typeof v === 'object'
+      ? Object.fromEntries(
+          Object.entries(v)
+            .sort(([a], [b]) => (a < b ? -1 : 1))
+            .map(([k, x]) => [k, sorted(x)]),
+        )
+      : v;
+  return JSON.stringify(sorted(withDefaults(p)));
+}
 
 const roleIdFrom = (name: string) =>
   name
@@ -51,17 +68,32 @@ function LevelSelect({ value, onChange, label, inherited }: { value: AccessLevel
   );
 }
 
-function RoleEditor({ role, objects, userCount, onDeleted }: { role: RoleDef; objects: ObjectDef[]; userCount: number; onDeleted: () => void }) {
+function RoleEditor({
+  role,
+  objects,
+  userCount,
+  onDeleted,
+  fieldView,
+  onFieldViewChange,
+}: {
+  role: RoleDef;
+  objects: ObjectDef[];
+  userCount: number;
+  onDeleted: () => void;
+  fieldView: FieldListView;
+  onFieldViewChange: Dispatch<SetStateAction<FieldListView>>;
+}) {
   const qc = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
   const { user: me } = useAuth();
   const ids = { name: useId(), desc: useId() };
+  const errorRef = useRef<HTMLDivElement>(null);
   const [name, setName] = useState(role.name);
   const [description, setDescription] = useState(role.description);
   const [perms, setPerms] = useState<RolePermissions>(() => structuredClone(role.permissions));
   const isAdminRole = role.id === 'admin';
-  const dirty = name !== role.name || description !== role.description || JSON.stringify(perms) !== JSON.stringify(role.permissions);
+  const dirty = name !== role.name || description !== role.description || permissionsKey(perms) !== permissionsKey(role.permissions);
 
   const defaults = perms.objects['*'] ?? NO_ACCESS;
   const setObject = (api: string, next: ObjectPermission | null) =>
@@ -74,13 +106,17 @@ function RoleEditor({ role, objects, userCount, onDeleted }: { role: RoleDef; ob
   const update = (api: string, patch: Partial<ObjectPermission>) => setObject(api, { ...(perms.objects[api] ?? defaults), ...patch });
 
   const save = useMutation({
-    mutationFn: () => api.put<RoleDef>(`/api/roles/${role.id}`, { name: name.trim(), description: description.trim(), permissions: perms }),
+    mutationFn: () => api.put<RoleDef>(`/api/roles/${role.id}`, { name: name.trim(), description: description.trim(), permissions: withDefaults(perms) }),
     onSuccess: async () => {
       toast.success(`${name.trim()} saved`);
       await invalidateMetadata(qc);
       if (me.roleId === role.id) await qc.invalidateQueries({ queryKey: ['session'] });
     },
   });
+  // The save button sits at the bottom of a long page; bring the reason a save failed into view.
+  useEffect(() => {
+    if (save.error) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [save.error]);
   const remove = useMutation({
     mutationFn: () => api.del(`/api/roles/${role.id}`),
     onSuccess: async () => {
@@ -142,7 +178,9 @@ function RoleEditor({ role, objects, userCount, onDeleted }: { role: RoleDef; ob
             </Button>
           </div>
         </div>
-        <ErrorBanner error={save.error} className="mb-4" />
+        <div ref={errorRef}>
+          <ErrorBanner error={save.error} className="mb-4" />
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <FormField label="Role name" required htmlFor={ids.name}>
             <input id={ids.name} className="input" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
@@ -160,6 +198,18 @@ function RoleEditor({ role, objects, userCount, onDeleted }: { role: RoleDef; ob
                 <p className="mt-1 text-xs text-slate-500">{isAdminRole && c.key === 'setup' ? 'Always on for the administrator role, so nobody gets locked out.' : c.help}</p>
               </div>
             ))}
+          </div>
+        </fieldset>
+        <fieldset className="mt-5">
+          <legend className="mb-2 text-sm font-semibold text-slate-800">Sign-in</legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-slate-200 p-3">
+              <Toggle checked={!!perms.requireMfa} onChange={(v) => setPerms((p) => ({ ...p, requireMfa: v }))} label="Require two-factor authentication" />
+              <p className="mt-1 text-xs text-slate-500">
+                Users with this role must enter a code from an authenticator app when they sign in with a password. Takes effect at their next sign-in. People who use single sign-on rely on their identity
+                provider instead.
+              </p>
+            </div>
           </div>
         </fieldset>
       </div>
@@ -231,6 +281,7 @@ function RoleEditor({ role, objects, userCount, onDeleted }: { role: RoleDef; ob
           </table>
         </div>
       </div>
+      <FieldPermissions perms={perms} setPerms={setPerms} objects={objects} view={fieldView} onViewChange={onFieldViewChange} />
       <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50/90 py-3 backdrop-blur">
         {dirty && (
           <>
@@ -280,7 +331,7 @@ function NewRoleForm({ roles, objects, onClose, onCreated }: { roles: RoleDef[];
       const permissions = source ? structuredClone(source.permissions) : blankPermissions();
       // Skip permissions for objects that no longer exist; the server rejects them.
       permissions.objects = Object.fromEntries(Object.entries(permissions.objects).filter(([k]) => k === '*' || objects.some((o) => o.apiName === k)));
-      return api.put<RoleDef>(`/api/roles/${effectiveId}`, { name: name.trim(), description: description.trim(), permissions });
+      return api.put<RoleDef>(`/api/roles/${effectiveId}`, { name: name.trim(), description: description.trim(), permissions: withDefaults(permissions) });
     },
     onSuccess: async (role) => {
       qc.setQueryData<RoleDef[]>(['roles'], (old) => (old ? [...old, role] : old));
@@ -353,7 +404,7 @@ export default function Roles() {
   const users = useUsers();
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-
+  const [fieldView, setFieldView] = useState<FieldListView>(() => ({ filter: '', expanded: new Set(), toggled: new Set() }));
   const list = roles.data ?? [];
   const current = list.find((r) => r.id === selected) ?? list[0];
   const countFor = (id: string) => (users.data ?? []).filter((u) => u.roleId === id).length;
@@ -395,6 +446,11 @@ export default function Roles() {
                       <span className={cx('flex items-center gap-2 text-sm font-medium', on ? 'text-indigo-700' : 'text-slate-800')}>
                         <span className="truncate">{r.name}</span>
                         {r.permissions.setup && <Badge color="indigo">Admin</Badge>}
+                        {r.permissions.requireMfa && (
+                          <span title="Two-factor authentication required">
+                            <Badge color="teal">2FA</Badge>
+                          </span>
+                        )}
                       </span>
                       <span className="mt-0.5 block text-xs text-slate-500">
                         {n} user{n === 1 ? '' : 's'}
@@ -405,7 +461,15 @@ export default function Roles() {
               })}
             </ul>
           </nav>
-          <RoleEditor key={`${current.id}:${JSON.stringify(current)}`} role={current} objects={objects.data ?? []} userCount={countFor(current.id)} onDeleted={() => setSelected(null)} />
+          <RoleEditor
+            key={`${current.id}:${JSON.stringify(current)}`}
+            role={current}
+            objects={objects.data ?? []}
+            userCount={countFor(current.id)}
+            onDeleted={() => setSelected(null)}
+            fieldView={fieldView}
+            onFieldViewChange={setFieldView}
+          />
         </div>
       )}
       {creating && roles.data && <NewRoleForm roles={roles.data} objects={objects.data ?? []} onClose={() => setCreating(false)} onCreated={setSelected} />}
