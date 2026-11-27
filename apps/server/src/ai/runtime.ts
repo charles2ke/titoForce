@@ -311,6 +311,7 @@ export class AgentService {
   }
 
   private async runBrain(state: RunState, input: string): Promise<string> {
+    const mutatingTools = new Set(TOOLS.filter((tool) => tool.kind === 'write').map((tool) => tool.name));
     const users = (await this.deps.users.listUsers(false)).filter((u) => u.active);
     const gen = plan(input, {
       metadata: this.deps.metadata,
@@ -325,6 +326,9 @@ export class AgentService {
     let calls = 0;
     while (!next.done) {
       if (++calls > MAX_BRAIN_CALLS) throw new Error('The agent made too many tool calls');
+      if (mutatingTools.has(next.value.tool) && state.agent.autonomy !== 'approval_required') {
+        throw new Error(`Approval is required for ${next.value.tool}; use an approval_required agent.`);
+      }
       next = await gen.next(await this.invokeTool(state, next.value.tool, next.value.args));
     }
     state.steps.push({ type: 'message', at: nowIso(), text: next.value });
@@ -333,6 +337,7 @@ export class AgentService {
 
   private async runLlm(provider: LlmProvider, state: RunState, input: string, history: ConversationMessage[]): Promise<string> {
     const tools = this.allowedTools(state.agent).map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
+    const mutatingTools = new Set(TOOLS.filter((tool) => tool.kind === 'write').map((tool) => tool.name));
     const system = await this.systemPrompt(state);
     const messages: LlmMessage[] = [...history.map((m): LlmMessage => (m.role === 'user' ? { role: 'user', content: m.content } : { role: 'assistant', content: m.content })), { role: 'user', content: input }];
     for (let step = 0; step < MAX_LLM_STEPS; step++) {
@@ -345,6 +350,9 @@ export class AgentService {
       if (res.text?.trim()) state.steps.push({ type: 'message', at: nowIso(), text: res.text.trim() });
       messages.push({ role: 'assistant', content: res.text, toolCalls: res.toolCalls });
       for (const tc of res.toolCalls) {
+        if (mutatingTools.has(tc.name) && tools.some((tool) => tool.name === tc.name) && state.agent.autonomy !== 'approval_required') {
+          throw new Error(`Approval is required for ${tc.name}; use an approval_required agent.`);
+        }
         const outcome = await this.invokeTool(state, tc.name, tc.args);
         const payload = !outcome.ok
           ? { error: outcome.error }

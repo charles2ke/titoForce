@@ -1,4 +1,6 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as rulesBrain from '../src/ai/rules-brain.ts';
+import { TOOLS } from '../src/ai/tools.ts';
 import type { Principal } from '../src/platform/principal.ts';
 import type { Services } from '../src/services.ts';
 import { createTestServices, principal } from './helpers.ts';
@@ -6,13 +8,15 @@ import { createTestServices, principal } from './helpers.ts';
 describe('offline rules engine', () => {
   let s: Services;
   let maria: Principal;
+  let admin: Principal;
   beforeAll(async () => {
     s = await createTestServices();
     maria = await principal(s, 'maria');
+    admin = await principal(s, 'admin');
   });
   afterAll(() => s?.close());
 
-  it('qualifies new leads through the "Qualify new leads with AI" automation', async () => {
+  it('requires approval before the lead qualification automation can update a lead', async () => {
     const lead = await s.records.create(maria, 'lead', {
       first_name: 'Vera',
       last_name: 'Quinn',
@@ -23,12 +27,60 @@ describe('offline rules engine', () => {
       employees: 5000,
     });
     await s.jobs.drain();
-    const scored = await s.records.get(maria, 'lead', lead.id);
-    expect(scored.fields.lead_score).toEqual(expect.any(Number));
-    expect(['Hot', 'Warm', 'Cold']).toContain(scored.fields.rating);
+    const unchanged = await s.records.get(maria, 'lead', lead.id);
+    expect(unchanged.fields).toEqual(lead.fields);
     const [run] = await s.agents.listRuns(maria, { recordId: lead.id });
-    expect(run).toMatchObject({ agentId: 'agt_lead_qualifier', trigger: 'automation', status: 'completed', provider: 'offline' });
-    expect(run!.output).toContain(`${scored.fields.lead_score}/100`);
+    expect(run).toMatchObject({ agentId: 'agt_lead_qualifier', trigger: 'automation', status: 'failed', provider: 'offline' });
+    expect(run!.error).toContain('Approval is required for update_record');
+  });
+
+  it.each(TOOLS.filter((tool) => tool.kind === 'write'))('blocks autonomous $name calls before execution', async (tool) => {
+    const agent = await s.agents.create(admin, {
+      name: `Autonomous ${tool.name}`,
+      description: '',
+      instructions: '',
+      tools: [tool.name],
+      autonomy: 'autonomous',
+      icon: 'bot',
+      color: 'indigo',
+      active: true,
+    });
+    const planner = vi.spyOn(rulesBrain, 'plan').mockImplementationOnce(async function* () {
+      yield { tool: tool.name, args: {} };
+      return 'Done.';
+    });
+    const execute = vi.spyOn(tool, 'run').mockResolvedValue({});
+    try {
+      const { runId } = await s.agents.startChat(maria, { agentId: agent.id, message: 'Run this action' });
+      await s.jobs.drain();
+      const run = await s.agents.getRun(maria, runId);
+      expect(run.status).toBe('failed');
+      expect(run.error).toContain(`Approval is required for ${tool.name}`);
+      expect(run.steps.some((step) => step.type === 'tool_call')).toBe(false);
+      expect(execute).not.toHaveBeenCalled();
+      expect((await s.agents.listActions(maria)).filter((action) => action.runId === runId)).toEqual([]);
+    } finally {
+      planner.mockRestore();
+      execute.mockRestore();
+    }
+  });
+
+  it('queues offline writes in approval-required mode and executes only after approval', async () => {
+    const opp = (await s.records.query(maria, 'opportunity', { filters: { match: 'all', rules: [{ field: 'stage', op: 'eq', value: 'Proposal' }] }, pageSize: 1 })).records[0]!;
+    const { runId } = await s.agents.startChat(maria, {
+      agentId: 'agt_deal_coach',
+      message: 'Move this deal to negotiation',
+      recordId: opp.id,
+    });
+    await s.jobs.drain();
+    const run = await s.agents.getRun(maria, runId);
+    expect(run.error).toBeNull();
+    expect(run.status).toBe('completed');
+    const step = run.steps.find((step) => step.tool === 'update_record')!;
+    expect(step).toMatchObject({ status: 'pending_approval', args: { id: opp.id, fields: { stage: 'Negotiation' } } });
+    expect((await s.records.get(maria, 'opportunity', opp.id)).fields.stage).toBe('Proposal');
+    expect((await s.agents.decideAction(maria, step.actionId!, 'approve')).status).toBe('executed');
+    expect((await s.records.get(maria, 'opportunity', opp.id)).fields.stage).toBe('Negotiation');
   });
 
   it('answers chat questions with real data and keeps the conversation', async () => {
@@ -204,6 +256,35 @@ describe('LLM provider (mocked OpenAI-compatible API)', () => {
     expect((await s.records.get(maria, 'opportunity', opp.id)).fields).toMatchObject({ stage: 'Negotiation', probability: 80 });
     expect((await s.agents.getRun(maria, run.id)).steps.find((st) => st.tool === 'update_record')!.status).toBe('ok');
     await expect(s.agents.decideAction(maria, step.actionId!, 'approve')).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('blocks autonomous writes before execution', async () => {
+    const admin = await principal(s, 'admin');
+    const opp = (await s.records.query(maria, 'opportunity', { pageSize: 1 })).records[0]!;
+    const agent = await s.agents.create(admin, {
+      name: 'Autonomous LLM writer',
+      description: '',
+      instructions: '',
+      tools: ['update_record'],
+      autonomy: 'autonomous',
+      icon: 'bot',
+      color: 'indigo',
+      active: true,
+    });
+    const updateRecord = TOOLS.find((tool) => tool.name === 'update_record')!;
+    const execute = vi.spyOn(updateRecord, 'run');
+    script = [{ content: null, tool_calls: [call('update_record', { id: opp.id, fields: { stage: 'Closed Lost' } })] }];
+    try {
+      const run = await chat(maria, agent.id, 'Close this deal', opp.id);
+      expect(run.status).toBe('failed');
+      expect(run.error).toContain('Approval is required for update_record');
+      expect(run.steps.some((step) => step.type === 'tool_call')).toBe(false);
+      expect(execute).not.toHaveBeenCalled();
+      expect((await s.records.get(maria, 'opportunity', opp.id)).fields.stage).toBe(opp.fields.stage);
+      expect((await s.agents.listActions(maria)).filter((action) => action.runId === run.id)).toEqual([]);
+    } finally {
+      execute.mockRestore();
+    }
   });
 
   it("limits agents to their enabled tools and the requesting user's permissions", async () => {
